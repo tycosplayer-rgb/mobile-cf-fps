@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>穿越火线风格 · 移动端 FPS 骨架</title>
+  </head>
+  <body>
+    <div id="game-root">
+      <canvas id="game-canvas"></canvas>
+
+      <!-- HUD -->
+      <div id="hud" class="hud">
+        <div class="hud-top">
+          <div class="health-bar">
+            <span class="label">生命</span>
+            <div class="bar"><div id="health-fill" class="fill"></div></div>
+            <span id="health-text">100</span>
+          </div>
+          <div class="ammo-panel">
+            <span id="ammo-mag">30</span>
+            <span class="sep">/</span>
+            <span id="ammo-reserve">90</span>
+            <span class="ammo-label">弹药</span>
+          </div>
+        </div>
+        <div id="crosshair" class="crosshair" aria-hidden="true">
+          <span class="ch-h"></span>
+          <span class="ch-v"></span>
+          <span class="ch-dot"></span>
+        </div>
+        <div id="hit-marker" class="hit-marker" hidden></div>
+        <div id="kill-feed" class="kill-feed"></div>
+        <div id="hint" class="hint">横屏游玩 · 左摇杆移动 · 右侧拖动瞄准 · 开火键射击</div>
+      </div>
+
+      <!-- Touch controls (CF Mobile layout) -->
+      <div id="touch-layer" class="touch-layer">
+        <div id="joystick-zone" class="joystick-zone">
+          <div id="joystick-base" class="joystick-base">
+            <div id="joystick-stick" class="joystick-stick"></div>
+          </div>
+        </div>
+        <div id="look-zone" class="look-zone"></div>
+        <div class="action-buttons">
+          <button id="btn-jump" class="action-btn" type="button" aria-label="跳跃">跳</button>
+          <button id="btn-reload" class="action-btn" type="button" aria-label="换弹">换</button>
+          <button id="btn-ads" class="action-btn" type="button" aria-label="开镜">镜</button>
+          <button id="btn-fire" class="action-btn fire" type="button" aria-label="开火">开火</button>
+        </div>
+      </div>
+
+      <!-- Orientation / start overlay -->
+      <div id="orient-overlay" class="overlay">
+        <div class="overlay-card">
+          <h1>移动端 FPS 骨架</h1>
+          <p>请将手机<strong>横屏</strong>后开始</p>
+          <p class="sub">桌面可用 WASD + 鼠标 · 空格跳跃 · R 换弹 · 鼠标左键开火</p>
+          <button id="btn-start" type="button">开始游戏</button>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
