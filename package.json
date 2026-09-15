@@ -1,6 +1,6 @@
 {
   "name": "mobile-cf-fps",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,8 +13,9 @@
     "vite": "^8.3.0"
   },
   "dependencies": {
+    "peerjs": "^1.5.5",
     "three": "^0.186.0"
   },
-  "description": "Mobile landscape FPS skeleton with CF Mobile-like touch controls (Vite + Three.js)",
+  "description": "Mobile landscape FPS with SFX, gun feel, and PeerJS PvP (Vite + Three.js)",
   "license": "MIT"
 }

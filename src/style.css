@@ -10,6 +10,13 @@
   touch-action: none;
 }
 
+input,
+textarea {
+  user-select: text;
+  -webkit-user-select: text;
+  touch-action: manipulation;
+}
+
 html,
 body {
   width: 100%;
@@ -34,6 +41,29 @@ body {
   outline: none;
 }
 
+.hidden-until-play {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+body.playing .hidden-until-play {
+  visibility: visible;
+}
+
+body.playing #touch-layer.hidden-until-play {
+  pointer-events: none; /* children re-enable */
+}
+
+body.playing #touch-layer .joystick-zone,
+body.playing #touch-layer .look-zone,
+body.playing #touch-layer .action-buttons {
+  pointer-events: auto;
+}
+
+body.playing #btn-mute {
+  pointer-events: auto;
+}
+
 /* ---------- HUD ---------- */
 .hud {
   position: absolute;
@@ -50,6 +80,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  gap: 10px;
 }
 
 .health-bar {
@@ -88,6 +119,15 @@ body {
   min-width: 28px;
 }
 
+.score-panel {
+  background: rgba(0, 0, 0, 0.4);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  white-space: nowrap;
+}
+
 .ammo-panel {
   background: rgba(0, 0, 0, 0.45);
   padding: 6px 12px;
@@ -122,11 +162,12 @@ body {
 }
 
 .crosshair {
+  --spread: 8px;
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   transform: translate(-50%, -50%);
 }
 
@@ -135,19 +176,20 @@ body {
   position: absolute;
   background: rgba(255, 255, 255, 0.9);
   box-shadow: 0 0 2px #000;
+  transition: inset 0.05s linear;
 }
 
 .crosshair .ch-h {
-  left: 4px;
-  right: 4px;
+  left: var(--spread);
+  right: var(--spread);
   top: 50%;
   height: 2px;
   margin-top: -1px;
 }
 
 .crosshair .ch-v {
-  top: 4px;
-  bottom: 4px;
+  top: var(--spread);
+  bottom: var(--spread);
   left: 50%;
   width: 2px;
   margin-left: -1px;
@@ -164,14 +206,13 @@ body {
   border-radius: 50%;
 }
 
-.crosshair.firing .ch-h {
-  left: 0;
-  right: 0;
+.crosshair.ads {
+  --spread: 3px;
 }
 
-.crosshair.firing .ch-v {
-  top: 0;
-  bottom: 0;
+.crosshair.firing .ch-h {
+  left: calc(var(--spread) - 2px);
+  right: calc(var(--spread) - 2px);
 }
 
 .hit-marker {
@@ -186,18 +227,67 @@ body {
   pointer-events: none;
 }
 
+.hit-marker.headshot {
+  border-color: #ff5252;
+  width: 26px;
+  height: 26px;
+}
+
+.hit-marker.kill {
+  border-color: #ff1744;
+  box-shadow: 0 0 12px #ff1744;
+}
+
 .hit-marker.show {
-  animation: hitPulse 0.25s ease-out;
+  animation: hitPulse 0.28s ease-out;
 }
 
 @keyframes hitPulse {
   0% {
     opacity: 1;
-    transform: translate(-50%, -50%) rotate(45deg) scale(0.6);
+    transform: translate(-50%, -50%) rotate(45deg) scale(0.55);
   }
   100% {
     opacity: 0;
-    transform: translate(-50%, -50%) rotate(45deg) scale(1.4);
+    transform: translate(-50%, -50%) rotate(45deg) scale(1.5);
+  }
+}
+
+.dmg-numbers {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 12;
+}
+
+.dmg-num {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: #ffeb3b;
+  text-shadow: 0 1px 3px #000;
+  animation: dmgFloat 0.7s ease-out forwards;
+  transform: translate(var(--ox, 0), var(--oy, 0));
+}
+
+.dmg-num.headshot {
+  color: #ff5252;
+  font-size: 22px;
+}
+
+@keyframes dmgFloat {
+  0% {
+    opacity: 1;
+    transform: translate(var(--ox, 0), var(--oy, 0)) scale(0.8);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--ox, 0), calc(var(--oy, 0) - 48px)) scale(1.15);
   }
 }
 
@@ -224,6 +314,60 @@ body {
   opacity: 0.55;
   white-space: nowrap;
   text-shadow: 0 1px 2px #000;
+}
+
+.mute-btn {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 42px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  pointer-events: auto;
+  z-index: 15;
+}
+
+.mute-btn.muted {
+  opacity: 0.55;
+}
+
+.hurt-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9;
+  opacity: 0;
+  background: radial-gradient(ellipse at center, transparent 35%, rgba(180, 0, 0, 0.75) 100%);
+  transition: opacity 0.05s linear;
+}
+
+.respawn-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.respawn-overlay.hidden {
+  display: none;
+}
+
+.respawn-text {
+  font-size: 20px;
+  font-weight: 700;
+  color: #ff8a80;
+  text-shadow: 0 2px 8px #000;
 }
 
 /* ---------- Touch layer ---------- */
@@ -324,7 +468,7 @@ body {
   background: rgba(244, 67, 54, 0.85);
 }
 
-/* ---------- Overlay ---------- */
+/* ---------- Overlay / Menu ---------- */
 .overlay {
   position: absolute;
   inset: 0;
@@ -332,9 +476,11 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(5, 10, 18, 0.88);
+  background: rgba(5, 10, 18, 0.9);
   pointer-events: auto;
   touch-action: manipulation;
+  overflow-y: auto;
+  padding: 16px;
 }
 
 .overlay.hidden {
@@ -343,9 +489,10 @@ body {
 
 .overlay-card {
   text-align: center;
-  padding: 28px 32px;
-  max-width: 420px;
-  background: rgba(20, 28, 40, 0.95);
+  padding: 22px 24px;
+  max-width: 440px;
+  width: 100%;
+  background: rgba(20, 28, 40, 0.96);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 16px;
   touch-action: manipulation;
@@ -353,40 +500,157 @@ body {
 
 .overlay-card h1 {
   font-size: 22px;
-  margin-bottom: 12px;
+  margin-bottom: 6px;
 }
 
-.overlay-card p {
+.tagline {
   font-size: 14px;
-  line-height: 1.5;
-  opacity: 0.9;
-  margin-bottom: 8px;
+  color: #ffab40;
+  margin-bottom: 6px;
 }
 
 .overlay-card .sub {
   font-size: 12px;
   opacity: 0.6;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
-#btn-start {
-  padding: 12px 36px;
-  font-size: 16px;
+.field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+
+.field input,
+.room-input {
+  flex: 1;
+  max-width: 180px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 15px;
+  outline: none;
+}
+
+.room-input {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  text-align: center;
+  max-width: 140px;
+  font-weight: 700;
+}
+
+.menu-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.join-row {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+
+.btn {
+  padding: 11px 22px;
+  font-size: 15px;
   font-weight: 600;
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 999px;
-  background: linear-gradient(135deg, #ff7043, #e53935);
+  background: rgba(255, 255, 255, 0.08);
   color: #fff;
   cursor: pointer;
   touch-action: manipulation;
   pointer-events: auto;
 }
 
-#btn-start:active {
-  transform: scale(0.96);
+.btn.primary {
+  border: none;
+  background: linear-gradient(135deg, #ff7043, #e53935);
 }
 
-/* Portrait nudge on phones */
+.btn.ghost {
+  background: transparent;
+  opacity: 0.8;
+  font-size: 13px;
+  margin-top: 6px;
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.menu-status {
+  font-size: 12px;
+  color: #ffd54f;
+  margin: 8px 0;
+  min-height: 1.2em;
+}
+
+.menu-status.error {
+  color: #ff8a80;
+}
+
+.lobby-panel {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.lobby-panel.hidden {
+  display: none;
+}
+
+.lobby-code {
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.lobby-code strong {
+  font-size: 22px;
+  letter-spacing: 0.2em;
+  color: #ffd54f;
+}
+
+.lobby-players {
+  list-style: none;
+  text-align: left;
+  max-width: 260px;
+  margin: 0 auto 12px;
+  font-size: 13px;
+}
+
+.lobby-players li {
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.lobby-players li.host::after {
+  content: " · 房主";
+  opacity: 0.55;
+  font-size: 11px;
+}
+
+.lobby-hint {
+  font-size: 11px;
+  opacity: 0.55;
+  line-height: 1.4;
+  margin-top: 8px;
+}
+
 @media (orientation: portrait) and (max-width: 900px) {
   .overlay:not(.hidden) .overlay-card::after {
     content: "↻ 请旋转至横屏";
@@ -402,6 +666,6 @@ body {
     opacity: 0.35;
   }
   .hint::after {
-    content: "  |  WASD 移动 · 鼠标瞄准 · 左键开火 · R 换弹 · 空格跳跃 · Shift 开镜";
+    content: "  |  WASD · 鼠标 · 左键开火 · R 换弹 · 空格跳跃 · Shift 开镜";
   }
 }

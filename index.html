@@ -9,20 +9,21 @@
     />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <title>穿越火线风格 · 移动端 FPS 骨架</title>
+    <title>移动端 FPS · 音效 / 枪感 / 对战</title>
   </head>
   <body>
     <div id="game-root">
       <canvas id="game-canvas"></canvas>
 
       <!-- HUD -->
-      <div id="hud" class="hud">
+      <div id="hud" class="hud hidden-until-play">
         <div class="hud-top">
           <div class="health-bar">
             <span class="label">生命</span>
             <div class="bar"><div id="health-fill" class="fill"></div></div>
             <span id="health-text">100</span>
           </div>
+          <div id="score-panel" class="score-panel">练习模式</div>
           <div class="ammo-panel">
             <span id="ammo-mag">30</span>
             <span class="sep">/</span>
@@ -36,12 +37,20 @@
           <span class="ch-dot"></span>
         </div>
         <div id="hit-marker" class="hit-marker" hidden></div>
+        <div id="dmg-numbers" class="dmg-numbers" aria-hidden="true"></div>
         <div id="kill-feed" class="kill-feed"></div>
-        <div id="hint" class="hint">横屏游玩 · 左摇杆移动 · 右侧拖动瞄准 · 开火键射击</div>
+        <div id="hint" class="hint">横屏 · 左摇杆移动 · 右侧瞄准 · 开火射击</div>
+        <button id="btn-mute" class="mute-btn" type="button" aria-label="静音" title="静音">🔊</button>
       </div>
 
-      <!-- Touch controls (CF Mobile layout) -->
-      <div id="touch-layer" class="touch-layer">
+      <div id="hurt-vignette" class="hurt-vignette" aria-hidden="true"></div>
+
+      <div id="respawn-overlay" class="respawn-overlay hidden">
+        <div class="respawn-text">你被击倒 · 3 秒后重生</div>
+      </div>
+
+      <!-- Touch controls -->
+      <div id="touch-layer" class="touch-layer hidden-until-play">
         <div id="joystick-zone" class="joystick-zone">
           <div id="joystick-base" class="joystick-base">
             <div id="joystick-stick" class="joystick-stick"></div>
@@ -56,13 +65,37 @@
         </div>
       </div>
 
-      <!-- Orientation / start overlay -->
+      <!-- Menu / Lobby overlay -->
       <div id="orient-overlay" class="overlay">
-        <div class="overlay-card">
-          <h1>移动端 FPS 骨架</h1>
-          <p>请将手机<strong>横屏</strong>后开始</p>
-          <p class="sub">桌面可用 WASD + 鼠标 · 空格跳跃 · R 换弹 · 鼠标左键开火</p>
-          <button id="btn-start" type="button">开始游戏</button>
+        <div class="overlay-card menu-card">
+          <h1>移动端 FPS</h1>
+          <p class="tagline">音效 · 枪感 · 实时对战</p>
+          <p class="sub">请横屏游玩 · 桌面可用 WASD + 鼠标</p>
+
+          <label class="field">
+            <span>昵称</span>
+            <input id="input-name" type="text" maxlength="12" placeholder="玩家" autocomplete="off" />
+          </label>
+
+          <div class="menu-actions">
+            <button id="btn-practice" type="button" class="btn primary">单机练习（靶子）</button>
+            <button id="btn-create" type="button" class="btn">创建对战房间</button>
+          </div>
+
+          <div class="join-row">
+            <input id="input-room" type="text" maxlength="6" placeholder="房间码" autocomplete="off" class="room-input" />
+            <button id="btn-join" type="button" class="btn">加入</button>
+          </div>
+
+          <p id="menu-status" class="menu-status" hidden></p>
+
+          <div id="lobby-panel" class="lobby-panel hidden">
+            <div class="lobby-code">房间码 <strong id="lobby-code-text">----</strong></div>
+            <ul id="lobby-players" class="lobby-players"></ul>
+            <button id="btn-start-match" type="button" class="btn primary" hidden>开始对战</button>
+            <button id="btn-leave-lobby" type="button" class="btn ghost">离开房间</button>
+            <p class="lobby-hint">把房间码发给好友，对方打开同一网页加入即可（PeerJS 公网信令）。</p>
+          </div>
         </div>
       </div>
     </div>
