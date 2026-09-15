@@ -41,13 +41,18 @@ export class Player {
   }
 
   applyRecoilKick(pitch, yaw) {
+    // Temporary visual/camera kick only — never bake into look aim (pitch/yaw).
     this.recoilPitch += pitch;
     this.recoilYaw += yaw;
-    this.pitch -= pitch;
-    this.yaw -= yaw;
-    const lim = Math.PI / 2 - 0.05;
-    this.pitch = Math.max(-lim, Math.min(lim, this.pitch));
     this.shake = Math.min(1, this.shake + 0.35);
+    this._applyCameraOrientation();
+  }
+
+  _applyCameraOrientation() {
+    const lim = Math.PI / 2 - 0.05;
+    // Positive recoilPitch kicks view UP; decays back to true aim each frame.
+    this.camera.rotation.y = this.yaw + this.recoilYaw;
+    this.camera.rotation.x = Math.max(-lim, Math.min(lim, this.pitch + this.recoilPitch));
   }
 
   takeDamage(amount) {
@@ -79,16 +84,17 @@ export class Player {
   }
 
   update(dt, controls, colliders) {
-    // Recoil recovery (visual spring — pitch/yaw already kicked; ease residual tracking)
+    // Recoil offset decays toward 0 — true aim (pitch/yaw) stays where the player pointed.
     this.recoilPitch *= Math.pow(0.04, dt);
     this.recoilYaw *= Math.pow(0.04, dt);
+    if (Math.abs(this.recoilPitch) < 1e-5) this.recoilPitch = 0;
+    if (Math.abs(this.recoilYaw) < 1e-5) this.recoilYaw = 0;
     this.shake = Math.max(0, this.shake - dt * 3.5);
     this._hurtFlash = Math.max(0, this._hurtFlash - dt);
 
     if (!this.alive) {
       this.camera.position.copy(this.position);
-      this.camera.rotation.y = this.yaw;
-      this.camera.rotation.x = this.pitch;
+      this._applyCameraOrientation();
       return;
     }
 
@@ -135,8 +141,7 @@ export class Player {
     const sx = (Math.random() - 0.5) * this.shake * 0.06;
     const sy = (Math.random() - 0.5) * this.shake * 0.06;
     this.camera.position.set(this.position.x + sx, this.position.y + sy, this.position.z);
-    this.camera.rotation.y = this.yaw;
-    this.camera.rotation.x = this.pitch;
+    this._applyCameraOrientation();
 
     const targetFov = ads ? this.adsFov : this.baseFov;
     this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, dt * 12);
