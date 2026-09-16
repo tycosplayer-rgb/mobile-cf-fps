@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { resolvePlayerCollisions } from './Arena.js';
+import { sweepPlayerMove, findSafeSpawn, resolvePlayerCollisions } from './Arena.js';
 
 export class Player {
   constructor(camera, spawn) {
@@ -68,9 +68,16 @@ export class Player {
     return false;
   }
 
-  respawn(spawnPos, yaw = Math.PI) {
-    const p = spawnPos || this.spawn;
+  /**
+   * Respawn at spawnPos; if colliders provided, nudge to nearest free spot.
+   */
+  respawn(spawnPos, yaw = Math.PI, colliders = null) {
+    let p = spawnPos || this.spawn;
+    if (colliders) {
+      p = findSafeSpawn(p, this.radius, colliders, this.height);
+    }
     this.position.copy(p);
+    this.position.y = this.height;
     this.velocity.set(0, 0, 0);
     this.yaw = yaw;
     this.pitch = 0;
@@ -81,6 +88,17 @@ export class Player {
     this.recoilYaw = 0;
     this.shake = 0;
     this.respawnAt = 0;
+  }
+
+  /**
+   * Ensure current position is outside geometry (initial spawn / corrections).
+   */
+  ensureSafePosition(colliders) {
+    if (!colliders) return;
+    const safe = findSafeSpawn(this.position, this.radius, colliders, this.height);
+    this.position.x = safe.x;
+    this.position.z = safe.z;
+    this.position.y = this.height;
   }
 
   update(dt, controls, colliders) {
@@ -126,9 +144,13 @@ export class Player {
     const next = this.position.clone();
     next.x += this.velocity.x * dt;
     next.z += this.velocity.z * dt;
-    const resolved = resolvePlayerCollisions(next, this.radius, colliders);
+    const resolved = sweepPlayerMove(this.position, next, this.radius, colliders);
     this.position.x = resolved.x;
     this.position.z = resolved.z;
+
+    // If blocked from intended XZ, kill that velocity component
+    if (Math.abs(this.position.x - next.x) > 1e-4) this.velocity.x = 0;
+    if (Math.abs(this.position.z - next.z) > 1e-4) this.velocity.z = 0;
 
     this.position.y += this.velocity.y * dt;
     if (this.position.y <= this.height) {
@@ -136,6 +158,11 @@ export class Player {
       this.velocity.y = 0;
       this.onGround = true;
     }
+
+    // Final depenetration pass (catches soft pushes / multi-body leftovers)
+    const depen = resolvePlayerCollisions(this.position, this.radius, colliders);
+    this.position.x = depen.x;
+    this.position.z = depen.z;
 
     // Screen shake offset
     const sx = (Math.random() - 0.5) * this.shake * 0.06;
@@ -146,6 +173,7 @@ export class Player {
     const targetFov = ads ? this.adsFov : this.baseFov;
     this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, dt * 12);
     this.camera.updateProjectionMatrix();
+
   }
 
   get moveSpeed01() {

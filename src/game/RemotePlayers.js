@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { resolvePlayerCollisions } from './Arena.js';
 
 const HEIGHT = 1.7;
 const RADIUS = 0.4;
@@ -103,12 +104,23 @@ export class RemotePlayers {
     for (const id of [...this.remotes.keys()]) this.remove(id);
   }
 
-  applyState(id, state, name) {
+  /**
+   * Apply remote state. If colliders provided, clamp XZ against map so bad sync
+   * does not leave the mesh visually stuck inside walls.
+   */
+  applyState(id, state, name, colliders = null) {
     const r = this.ensure(id, name);
     if (name && name !== r.name) r.name = name;
-    r.x = state.x;
+    let x = state.x;
+    let z = state.z;
+    if (colliders) {
+      const out = resolvePlayerCollisions(new THREE.Vector3(x, state.y, z), r.radius, colliders);
+      x = out.x;
+      z = out.z;
+    }
+    r.x = x;
     r.y = state.y;
-    r.z = state.z;
+    r.z = z;
     r.yaw = state.yaw;
     r.pitch = state.pitch ?? 0;
     r.alive = state.alive !== false;

@@ -99,28 +99,202 @@ export function createArena(scene) {
   };
 }
 
+const ARENA_LIMIT = 19;
+const EPS = 1e-6;
+
 /**
- * Axis-aligned capsule vs AABB collision for player XZ movement.
+ * True if a horizontal disk of `radius` at (x,z) overlaps any solid collider.
+ * Capsule mid-height (~1.0) is assumed — skip very low props.
  */
-export function resolvePlayerCollisions(pos, radius, colliders) {
-  const out = pos.clone();
+export function isBlockedXZ(x, z, radius, colliders) {
+  const r2 = radius * radius;
   for (const c of colliders) {
-    // Only collide with lower solid bodies (player mid-height ~1.0)
     if (c.max.y < 0.3) continue;
-    const closestX = Math.max(c.min.x, Math.min(out.x, c.max.x));
-    const closestZ = Math.max(c.min.z, Math.min(out.z, c.max.z));
-    const dx = out.x - closestX;
-    const dz = out.z - closestZ;
-    const distSq = dx * dx + dz * dz;
-    if (distSq < radius * radius) {
-      const dist = Math.sqrt(distSq) || 0.0001;
-      const push = radius - dist;
-      out.x += (dx / dist) * push;
-      out.z += (dz / dist) * push;
+    const closestX = Math.max(c.min.x, Math.min(x, c.max.x));
+    const closestZ = Math.max(c.min.z, Math.min(z, c.max.z));
+    const dx = x - closestX;
+    const dz = z - closestZ;
+    if (dx * dx + dz * dz < r2 - EPS) return true;
+  }
+  if (Math.abs(x) > ARENA_LIMIT || Math.abs(z) > ARENA_LIMIT) return true;
+  return false;
+}
+
+/**
+ * Resolve circle (player XZ capsule) vs AABB solid bodies.
+ * Handles both exterior overlap AND fully-inside cases (min-penetration axis),
+ * then multi-pass so pushing out of one box doesn't leave you in another.
+ */
+export function resolvePlayerCollisions(pos, radius, colliders, passes = 4) {
+  const out = pos.clone();
+  for (let pass = 0; pass < passes; pass++) {
+    let moved = false;
+    for (const c of colliders) {
+      if (c.max.y < 0.3) continue;
+      if (_resolveCircleVsAabb(out, radius, c)) moved = true;
+    }
+    // Soft arena clamp
+    const cx = Math.max(-ARENA_LIMIT, Math.min(ARENA_LIMIT, out.x));
+    const cz = Math.max(-ARENA_LIMIT, Math.min(ARENA_LIMIT, out.z));
+    if (cx !== out.x || cz !== out.z) {
+      out.x = cx;
+      out.z = cz;
+      moved = true;
+    }
+    if (!moved) break;
+  }
+  return out;
+}
+
+/**
+ * Push circle center out of one AABB. Returns true if position changed.
+ */
+function _resolveCircleVsAabb(out, radius, c) {
+  const inside =
+    out.x > c.min.x + EPS &&
+    out.x < c.max.x - EPS &&
+    out.z > c.min.z + EPS &&
+    out.z < c.max.z - EPS;
+
+  if (inside) {
+    // Minimum translation along X or Z to exit the box, then add radius clearance.
+    const penLeft = out.x - c.min.x;
+    const penRight = c.max.x - out.x;
+    const penNear = out.z - c.min.z;
+    const penFar = c.max.z - out.z;
+    const minPen = Math.min(penLeft, penRight, penNear, penFar);
+    if (minPen === penLeft) out.x = c.min.x - radius;
+    else if (minPen === penRight) out.x = c.max.x + radius;
+    else if (minPen === penNear) out.z = c.min.z - radius;
+    else out.z = c.max.z + radius;
+    return true;
+  }
+
+  const closestX = Math.max(c.min.x, Math.min(out.x, c.max.x));
+  const closestZ = Math.max(c.min.z, Math.min(out.z, c.max.z));
+  let dx = out.x - closestX;
+  let dz = out.z - closestZ;
+  const distSq = dx * dx + dz * dz;
+  if (distSq >= radius * radius) return false;
+
+  if (distSq < EPS) {
+    // Degenerate: on the surface edge/corner with near-zero vector — pick axis.
+    const toCenterX = out.x - (c.min.x + c.max.x) * 0.5;
+    const toCenterZ = out.z - (c.min.z + c.max.z) * 0.5;
+    if (Math.abs(toCenterX) > Math.abs(toCenterZ)) {
+      out.x = toCenterX >= 0 ? c.max.x + radius : c.min.x - radius;
+    } else {
+      out.z = toCenterZ >= 0 ? c.max.z + radius : c.min.z - radius;
+    }
+    return true;
+  }
+
+  const dist = Math.sqrt(distSq);
+  const push = radius - dist;
+  out.x += (dx / dist) * push;
+  out.z += (dz / dist) * push;
+  return true;
+}
+
+/**
+ * Sweep XZ from `from` toward `to` in substeps so sprint + low FPS cannot tunnel
+ * through thin walls. Each step advances from the last *resolved* position.
+ * On block, tries axis-separated slides so you can glide along walls.
+ */
+export function sweepPlayerMove(from, to, radius, colliders) {
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  const dist = Math.hypot(dx, dz);
+  const out = from.clone();
+  out.y = to.y;
+  if (dist < EPS) {
+    return resolvePlayerCollisions(out, radius, colliders);
+  }
+  const stepSize = Math.max(radius * 0.4, 0.06);
+  const steps = Math.max(1, Math.ceil(dist / stepSize));
+  const stepX = dx / steps;
+  const stepZ = dz / steps;
+
+  for (let i = 0; i < steps; i++) {
+    const beforeX = out.x;
+    const beforeZ = out.z;
+    let resolved = resolvePlayerCollisions(
+      new THREE.Vector3(beforeX + stepX, to.y, beforeZ + stepZ),
+      radius,
+      colliders
+    );
+
+    // If diagonal move was heavily blocked, try sliding on each axis
+    const blocked =
+      Math.hypot(resolved.x - (beforeX + stepX), resolved.z - (beforeZ + stepZ)) > 1e-4;
+    if (blocked) {
+      const slideX = resolvePlayerCollisions(
+        new THREE.Vector3(beforeX + stepX, to.y, beforeZ),
+        radius,
+        colliders
+      );
+      const slideZ = resolvePlayerCollisions(
+        new THREE.Vector3(beforeX, to.y, beforeZ + stepZ),
+        radius,
+        colliders
+      );
+      const prog = (p) => Math.hypot(p.x - beforeX, p.z - beforeZ);
+      const best = [resolved, slideX, slideZ].sort((a, b) => prog(b) - prog(a))[0];
+      resolved = best;
+    }
+
+    out.x = resolved.x;
+    out.z = resolved.z;
+  }
+  return out;
+}
+
+
+/**
+ * Find a free spawn near `desired` (eye-height Vector3). Nudges in a spiral if blocked.
+ */
+export function findSafeSpawn(desired, radius, colliders, eyeY = 1.6) {
+  const r = radius + 0.05;
+  const tryPos = desired.clone();
+  tryPos.y = eyeY;
+  if (!isBlockedXZ(tryPos.x, tryPos.z, r, colliders)) {
+    return resolvePlayerCollisions(tryPos, radius, colliders);
+  }
+
+  const rings = 12;
+  const perRing = 10;
+  for (let ring = 1; ring <= rings; ring++) {
+    const rad = ring * 0.55;
+    for (let i = 0; i < perRing; i++) {
+      const ang = (i / perRing) * Math.PI * 2 + ring * 0.35;
+      const x = desired.x + Math.cos(ang) * rad;
+      const z = desired.z + Math.sin(ang) * rad;
+      if (!isBlockedXZ(x, z, r, colliders)) {
+        const p = new THREE.Vector3(x, eyeY, z);
+        return resolvePlayerCollisions(p, radius, colliders);
+      }
     }
   }
-  // Soft arena clamp
-  out.x = Math.max(-19, Math.min(19, out.x));
-  out.z = Math.max(-19, Math.min(19, out.z));
-  return out;
+
+  // Last resort: arena center
+  const fallback = new THREE.Vector3(0, eyeY, 0);
+  return resolvePlayerCollisions(fallback, radius, colliders);
+}
+
+export function softSeparateXZ(a, b, radiusA, radiusB, strength = 0.55) {
+  const minDist = radiusA + radiusB;
+  let dx = a.x - b.x;
+  let dz = a.z - b.z;
+  let dist = Math.hypot(dx, dz);
+  if (dist >= minDist) return false;
+  if (dist < EPS) {
+    dx = 1;
+    dz = 0;
+    dist = 1;
+  }
+  const overlap = minDist - dist;
+  const push = overlap * strength;
+  a.x += (dx / dist) * push;
+  a.z += (dz / dist) * push;
+  return true;
 }

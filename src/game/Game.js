@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createArena } from './Arena.js';
+import { createArena, findSafeSpawn, softSeparateXZ, resolvePlayerCollisions } from './Arena.js';
 import { TargetManager } from './Targets.js';
 import { Controls } from './Controls.js';
 import { Player } from './Player.js';
@@ -57,14 +57,16 @@ export class Game {
     this.colliders = arena.colliders;
     this.spawnPoints = SPAWNS;
 
-    this.targets = this.mode === 'practice' ? new TargetManager(this.scene) : null;
+    this.targets = this.mode === 'practice' ? new TargetManager(this.scene, this.colliders) : null;
     this.remotes = new RemotePlayers(this.scene);
     this.controls = new Controls();
 
     const mySpawnIdx = this._spawnIndexFor(this.net?.localId);
-    const spawn = this.spawnPoints[mySpawnIdx % this.spawnPoints.length].clone();
+    const spawnRaw = this.spawnPoints[mySpawnIdx % this.spawnPoints.length].clone();
+    const spawn = findSafeSpawn(spawnRaw, 0.35, this.colliders, 1.6);
     this.player = new Player(this.camera, spawn);
     this.player.yaw = mySpawnIdx % 2 === 0 ? Math.PI : 0;
+    this.player.ensureSafePosition(this.colliders);
 
     this.weapon = new Weapon();
     this.weapon.attachMuzzleFlash(this.camera);
@@ -164,15 +166,23 @@ export class Game {
     if (!this.player.alive) {
       if (this.player.respawnAt && time >= this.player.respawnAt) {
         const idx = this._spawnIndexFor(this.net?.localId || 'local');
-        const spawn = this.spawnPoints[(idx + this.deaths) % this.spawnPoints.length].clone();
-        this.player.respawn(spawn, (idx + this.deaths) % 2 === 0 ? Math.PI : 0);
+        const spawnRaw = this.spawnPoints[(idx + this.deaths) % this.spawnPoints.length].clone();
+        const spawn = findSafeSpawn(spawnRaw, this.player.radius, this.colliders, this.player.height);
+        this.player.respawn(spawn, (idx + this.deaths) % 2 === 0 ? Math.PI : 0, this.colliders);
         this.weapon.resetAmmo();
         if (this.elRespawn) this.elRespawn.classList.add('hidden');
-        this._sendNet({ type: 'respawn', x: spawn.x, y: spawn.y, z: spawn.z, yaw: this.player.yaw });
+        this._sendNet({
+          type: 'respawn',
+          x: this.player.position.x,
+          y: this.player.position.y,
+          z: this.player.position.z,
+          yaw: this.player.yaw,
+        });
       }
     }
 
     this.player.update(dt, this.controls, this.colliders);
+    this._separateFromRemotes();
     this.weapon.update(dt);
     if (this.targets) this.targets.update(dt, time);
 
@@ -289,7 +299,7 @@ export class Game {
     if (!msg || msg.from === this.net?.localId) return;
     switch (msg.type) {
       case 'state': {
-        this.remotes.applyState(msg.from, msg, msg.name);
+        this.remotes.applyState(msg.from, msg, msg.name, this.colliders);
         break;
       }
       case 'shoot': {
@@ -334,13 +344,32 @@ export class Game {
         this.remotes.applyState(
           msg.from,
           { x: msg.x, y: msg.y, z: msg.z, yaw: msg.yaw, alive: true, hp: 100 },
-          this._nameOf(msg.from)
+          this._nameOf(msg.from),
+          this.colliders
         );
         break;
       }
       default:
         break;
     }
+  }
+
+  _separateFromRemotes() {
+    if (!this.player.alive) return;
+    let pushed = false;
+    for (const r of this.remotes.remotes.values()) {
+      if (!r.alive) continue;
+      if (softSeparateXZ(this.player.position, { x: r.x, z: r.z }, this.player.radius, r.radius, 0.5)) {
+        pushed = true;
+      }
+    }
+    if (!pushed) return;
+    const depen = resolvePlayerCollisions(this.player.position, this.player.radius, this.colliders);
+    this.player.position.x = depen.x;
+    this.player.position.z = depen.z;
+    // Keep camera in sync after soft push (player.update already placed it)
+    this.camera.position.x = this.player.position.x;
+    this.camera.position.z = this.player.position.z;
   }
 
   _nameOf(id) {

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { resolvePlayerCollisions, findSafeSpawn } from './Arena.js';
 
 const TARGET_RADIUS = 0.55;
 const TARGET_HEIGHT = 1.7;
@@ -7,8 +8,9 @@ const TARGET_HEIGHT = 1.7;
  * Simple standing targets / dummy bots that can be shot and respawn.
  */
 export class TargetManager {
-  constructor(scene) {
+  constructor(scene, colliders = []) {
     this.scene = scene;
+    this.colliders = colliders;
     this.targets = [];
     this._tmp = new THREE.Vector3();
 
@@ -22,7 +24,14 @@ export class TargetManager {
     ];
 
     for (const s of spots) {
-      this.targets.push(this._spawn(s.x, s.z, s.color));
+      let x = s.x;
+      let z = s.z;
+      if (this.colliders.length) {
+        const safe = findSafeSpawn(new THREE.Vector3(x, 0, z), TARGET_RADIUS, this.colliders, 0);
+        x = safe.x;
+        z = safe.z;
+      }
+      this.targets.push(this._spawn(x, z, s.color));
     }
   }
 
@@ -85,8 +94,19 @@ export class TargetManager {
         continue;
       }
       t.patrolPhase += dt * 0.7;
-      t.group.position.x = t.home.x + Math.sin(t.patrolPhase) * 1.8;
-      t.group.position.z = t.home.z + Math.cos(t.patrolPhase * 0.85) * 1.2;
+      let x = t.home.x + Math.sin(t.patrolPhase) * 1.8;
+      let z = t.home.z + Math.cos(t.patrolPhase * 0.85) * 1.2;
+      if (this.colliders.length) {
+        const resolved = resolvePlayerCollisions(
+          new THREE.Vector3(x, 0, z),
+          t.radius,
+          this.colliders
+        );
+        x = resolved.x;
+        z = resolved.z;
+      }
+      t.group.position.x = x;
+      t.group.position.z = z;
       t.group.rotation.y = Math.atan2(
         Math.cos(t.patrolPhase) * 1.2,
         Math.sin(t.patrolPhase) * 1.8
