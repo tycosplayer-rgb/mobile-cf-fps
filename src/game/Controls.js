@@ -15,8 +15,9 @@ export class Controls {
     this._lookLast = null;
     this._joyPointerId = null;
     this._joyOrigin = { x: 0, y: 0 };
-    this._sensitivity = 0.0022;
-    this._mouseSens = 0.002;
+    // Tuned for quicker look response while keeping ADS comparatively controlled.
+    this._sensitivity = 0.0035;
+    this._mouseSens = 0.0032;
 
     this._joystickBase = document.getElementById('joystick-base');
     this._joystickStick = document.getElementById('joystick-stick');
