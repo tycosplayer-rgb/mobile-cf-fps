@@ -40,7 +40,10 @@
         <div id="dmg-numbers" class="dmg-numbers" aria-hidden="true"></div>
         <div id="kill-feed" class="kill-feed"></div>
         <div id="hint" class="hint">横屏 · 左摇杆移动 · 右侧瞄准 · 开火射击</div>
-        <button id="btn-mute" class="mute-btn" type="button" aria-label="静音" title="静音">🔊</button>
+        <div class="hud-tools">
+          <button id="btn-mute" class="mute-btn" type="button" aria-label="静音" title="静音">🔊</button>
+          <button id="btn-settings" class="settings-btn" type="button" aria-label="设置" title="设置">⚙</button>
+        </div>
       </div>
 
       <div id="hurt-vignette" class="hurt-vignette" aria-hidden="true"></div>
@@ -77,6 +80,24 @@
             <input id="input-name" type="text" maxlength="12" placeholder="玩家" autocomplete="off" />
           </label>
 
+          <div class="sens-field" data-sens-control>
+            <div class="sens-label-row">
+              <span>灵敏度</span>
+              <span class="sens-value" data-sens-value>5</span>
+            </div>
+            <input
+              class="sens-slider"
+              data-sens-slider
+              type="range"
+              min="1"
+              max="10"
+              step="0.5"
+              value="5"
+              aria-label="瞄准灵敏度"
+            />
+            <div class="sens-hint">1 低 · 5 默认 · 10 高（触控/鼠标共用）</div>
+          </div>
+
           <div class="menu-actions">
             <button id="btn-practice" type="button" class="btn primary">单机练习（靶子）</button>
             <button id="btn-create" type="button" class="btn">创建对战房间</button>
@@ -96,6 +117,31 @@
             <button id="btn-leave-lobby" type="button" class="btn ghost">离开房间</button>
             <p class="lobby-hint">把房间码发给好友，对方打开同一网页加入即可（PeerJS 公网信令）。</p>
           </div>
+        </div>
+      </div>
+
+      <!-- In-game settings -->
+      <div id="settings-overlay" class="overlay settings-overlay hidden" aria-hidden="true">
+        <div class="overlay-card settings-card">
+          <h2>设置</h2>
+          <div class="sens-field" data-sens-control>
+            <div class="sens-label-row">
+              <span>灵敏度</span>
+              <span class="sens-value" data-sens-value>5</span>
+            </div>
+            <input
+              class="sens-slider"
+              data-sens-slider
+              type="range"
+              min="1"
+              max="10"
+              step="0.5"
+              value="5"
+              aria-label="瞄准灵敏度"
+            />
+            <div class="sens-hint">1 低 · 5 默认 · 10 高（触控/鼠标共用，开镜仍约 0.55×）</div>
+          </div>
+          <button id="btn-settings-close" type="button" class="btn primary">继续游戏</button>
         </div>
       </div>
     </div>

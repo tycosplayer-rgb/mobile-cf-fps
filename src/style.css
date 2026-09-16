@@ -17,6 +17,10 @@ textarea {
   touch-action: manipulation;
 }
 
+input[type='range'] {
+  touch-action: pan-x;
+}
+
 html,
 body {
   width: 100%;
@@ -60,7 +64,9 @@ body.playing #touch-layer .action-buttons {
   pointer-events: auto;
 }
 
-body.playing #btn-mute {
+body.playing #btn-mute,
+body.playing #btn-settings,
+body.playing .hud-tools {
   pointer-events: auto;
 }
 
@@ -316,12 +322,20 @@ body.playing #btn-mute {
   text-shadow: 0 1px 2px #000;
 }
 
-.mute-btn {
+.hud-tools {
   position: absolute;
   top: max(12px, env(safe-area-inset-top));
   left: 50%;
   transform: translateX(-50%);
   margin-top: 42px;
+  display: flex;
+  gap: 8px;
+  z-index: 15;
+  pointer-events: none;
+}
+
+.mute-btn,
+.settings-btn {
   width: 40px;
   height: 40px;
   border-radius: 50%;
@@ -331,11 +345,15 @@ body.playing #btn-mute {
   font-size: 16px;
   cursor: pointer;
   pointer-events: auto;
-  z-index: 15;
+  line-height: 1;
 }
 
 .mute-btn.muted {
   opacity: 0.55;
+}
+
+.settings-btn {
+  font-size: 18px;
 }
 
 .hurt-vignette {
@@ -649,6 +667,59 @@ body.playing #btn-mute {
   opacity: 0.55;
   line-height: 1.4;
   margin-top: 8px;
+}
+
+.sens-field {
+  text-align: left;
+  margin: 0 auto 14px;
+  max-width: 320px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sens-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.sens-value {
+  font-variant-numeric: tabular-nums;
+  color: #ffd54f;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.sens-slider {
+  width: 100%;
+  accent-color: #ff7043;
+  cursor: pointer;
+}
+
+.sens-hint {
+  margin-top: 6px;
+  font-size: 11px;
+  opacity: 0.55;
+  line-height: 1.35;
+}
+
+.settings-overlay {
+  z-index: 60;
+  background: rgba(5, 10, 18, 0.72);
+}
+
+.settings-card h2 {
+  font-size: 18px;
+  margin-bottom: 14px;
+}
+
+.settings-card .btn {
+  margin-top: 4px;
+  min-width: 140px;
 }
 
 @media (orientation: portrait) and (max-width: 900px) {

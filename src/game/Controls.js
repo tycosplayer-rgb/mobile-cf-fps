@@ -1,6 +1,14 @@
 /**
  * Touch (CF Mobile layout) + keyboard/mouse controls.
  */
+import {
+  BASE_MOUSE_SENS,
+  BASE_TOUCH_SENS,
+  clampLookScale,
+  loadLookScale,
+  lookScaleToMultiplier,
+} from './Settings.js';
+
 export class Controls {
   constructor() {
     this.move = { x: 0, y: 0 }; // joystick / WASD, -1..1
@@ -15,9 +23,11 @@ export class Controls {
     this._lookLast = null;
     this._joyPointerId = null;
     this._joyOrigin = { x: 0, y: 0 };
-    // Tuned for quicker look response while keeping ADS comparatively controlled.
-    this._sensitivity = 0.0035;
-    this._mouseSens = 0.0032;
+    // Base rates match prior defaults; user scale multiplies both touch + mouse.
+    this._sensitivity = BASE_TOUCH_SENS;
+    this._mouseSens = BASE_MOUSE_SENS;
+    this._lookScale = loadLookScale();
+    this.setLookScale(this._lookScale);
 
     this._joystickBase = document.getElementById('joystick-base');
     this._joystickStick = document.getElementById('joystick-stick');
@@ -215,6 +225,19 @@ export class Controls {
   requestPointerLock() {
     const canvas = document.getElementById('game-canvas');
     if (canvas.requestPointerLock) canvas.requestPointerLock();
+  }
+
+  /** Apply UI look scale (1–10). Shared by touch + mouse; ADS still uses Player 0.55. */
+  setLookScale(scale) {
+    const s = clampLookScale(scale);
+    const mul = lookScaleToMultiplier(s);
+    this._lookScale = s;
+    this._sensitivity = BASE_TOUCH_SENS * mul;
+    this._mouseSens = BASE_MOUSE_SENS * mul;
+  }
+
+  getLookScale() {
+    return this._lookScale;
   }
 
   /** Call once per frame after reading lookDelta. */

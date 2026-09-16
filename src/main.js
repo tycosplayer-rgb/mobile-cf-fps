@@ -2,6 +2,11 @@ import './style.css';
 import { Game } from './game/Game.js';
 import { GameAudio } from './game/Audio.js';
 import { NetSession } from './game/Net.js';
+import {
+  formatLookScaleLabel,
+  loadLookScale,
+  saveLookScale,
+} from './game/Settings.js';
 
 const canvas = document.getElementById('game-canvas');
 const overlay = document.getElementById('orient-overlay');
@@ -11,6 +16,9 @@ const btnJoin = document.getElementById('btn-join');
 const btnStartMatch = document.getElementById('btn-start-match');
 const btnLeaveLobby = document.getElementById('btn-leave-lobby');
 const btnMute = document.getElementById('btn-mute');
+const btnSettings = document.getElementById('btn-settings');
+const btnSettingsClose = document.getElementById('btn-settings-close');
+const settingsOverlay = document.getElementById('settings-overlay');
 const inputName = document.getElementById('input-name');
 const inputRoom = document.getElementById('input-room');
 const menuStatus = document.getElementById('menu-status');
@@ -63,6 +71,74 @@ btnMute.addEventListener('click', (e) => {
   audio.toggleMute();
   syncMuteBtn();
   audio.playUi();
+});
+
+const sensSliders = Array.from(document.querySelectorAll('[data-sens-slider]'));
+const sensValues = Array.from(document.querySelectorAll('[data-sens-value]'));
+
+function syncSensUi(scale) {
+  const label = formatLookScaleLabel(scale);
+  for (const el of sensSliders) el.value = String(scale);
+  for (const el of sensValues) el.textContent = label;
+}
+
+function applyLookScale(scale) {
+  const s = saveLookScale(scale);
+  syncSensUi(s);
+  if (game?.controls) game.controls.setLookScale(s);
+  return s;
+}
+
+syncSensUi(loadLookScale());
+
+for (const slider of sensSliders) {
+  slider.addEventListener('input', () => {
+    applyLookScale(slider.value);
+  });
+  slider.addEventListener('change', () => {
+    applyLookScale(slider.value);
+    audio.playUi();
+  });
+}
+
+function openSettings() {
+  syncSensUi(loadLookScale());
+  settingsOverlay.classList.remove('hidden');
+  settingsOverlay.setAttribute('aria-hidden', 'false');
+  if (document.pointerLockElement) {
+    document.exitPointerLock?.();
+  }
+  audio.playUi();
+}
+
+function closeSettings() {
+  settingsOverlay.classList.add('hidden');
+  settingsOverlay.setAttribute('aria-hidden', 'true');
+  audio.playUi();
+  if (game?.running && !('ontouchstart' in window)) {
+    game.controls.requestPointerLock();
+  }
+}
+
+btnSettings.addEventListener('click', (e) => {
+  e.stopPropagation();
+  openSettings();
+});
+
+btnSettingsClose.addEventListener('click', (e) => {
+  e.stopPropagation();
+  closeSettings();
+});
+
+settingsOverlay.addEventListener('click', (e) => {
+  if (e.target === settingsOverlay) closeSettings();
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Escape' && !settingsOverlay.classList.contains('hidden')) {
+    e.preventDefault();
+    closeSettings();
+  }
 });
 
 function tryLockLandscape() {
@@ -225,8 +301,17 @@ canvas.addEventListener('click', () => {
 document.addEventListener(
   'touchmove',
   (e) => {
-    if (e.target.closest && (e.target.closest('input') || e.target.closest('button'))) return;
+    if (
+      e.target.closest &&
+      (e.target.closest('input') ||
+        e.target.closest('button') ||
+        e.target.closest('#settings-overlay') ||
+        e.target.closest('.sens-field'))
+    ) {
+      return;
+    }
     if (!overlay.classList.contains('hidden')) return;
+    if (!settingsOverlay.classList.contains('hidden')) return;
     e.preventDefault();
   },
   { passive: false }
