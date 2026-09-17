@@ -64,6 +64,7 @@ export class TargetManager {
       baseColor: color,
       home: new THREE.Vector3(x, 0, z),
       patrolPhase: Math.random() * Math.PI * 2,
+      _fireCd: 1.5 + Math.random() * 2.5,
       radius: TARGET_RADIUS,
       height: TARGET_HEIGHT,
     };
@@ -99,9 +100,21 @@ export class TargetManager {
         Math.cos(t.patrolPhase) * 1.2,
         Math.sin(t.patrolPhase) * 1.8
       );
-      // Walk cycle while patrolling
+      // Walk cycle while patrolling (clearer arm swing via Humanoid.setAnim)
       t.human.setAnim(t.patrolPhase * 3.2, 0.75);
+      // Occasional shoot pose so practice bots show fire kick without AI combat
+      t._fireCd = (t._fireCd ?? 2) - dt;
+      if (t._fireCd <= 0) {
+        t._fireCd = 2.2 + Math.random() * 3.5;
+        if (t.human.triggerFire) t.human.triggerFire();
+      }
+      if (t.human.updateFire) t.human.updateFire(dt);
     }
+  }
+
+  /** Optional: play a shoot pose on a bot (practice feedback / future AI fire). */
+  triggerFire(target) {
+    if (target?.human?.triggerFire) target.human.triggerFire();
   }
 
   raycast(origin, direction, maxDist = 80) {

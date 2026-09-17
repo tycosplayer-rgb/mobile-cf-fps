@@ -168,11 +168,17 @@ export class Game {
     this.weapon.update(dt);
     if (this.targets) this.targets.update(dt, time);
 
-    // Viewmodel settle
-    this._viewKick = Math.max(0, this._viewKick - dt * 8);
-    this.viewmodel.rotation.x = -this._viewKick * 0.9;
-    this.viewmodel.position.z = this._viewKick * 0.04;
-    this.viewmodel.position.y = -this._viewKick * 0.02;
+    // FP viewmodel: idle sway, walk bob/swing, fire kick, reload motion
+    if (this.viewmodel?.userData?.update) {
+      this.viewmodel.userData.update(dt, {
+        speed01: this.player.alive ? this.player.moveSpeed01 : 0,
+        ads: this.controls.ads,
+        reloading: this.weapon.isReloading,
+        time,
+      });
+    }
+    // Third-person remote arm fire-kick decay
+    this.remotes.update(dt);
 
     // Crosshair bloom visual
     const bloomPx = 4 + this.weapon.bloom * 180;
@@ -195,6 +201,7 @@ export class Game {
           const recoil = this.weapon.consumeRecoil();
           this.player.applyRecoilKick(recoil.pitch, recoil.yaw);
           this._viewKick = Math.min(1, this._viewKick + 0.55);
+          if (this.viewmodel?.userData?.triggerFire) this.viewmodel.userData.triggerFire();
           this.elCrosshair?.classList.add('firing');
           setTimeout(() => this.elCrosshair?.classList.remove('firing'), 45);
           this._spawnTracer(shot.origin, shot.direction);
@@ -288,6 +295,7 @@ export class Game {
         const origin = new THREE.Vector3(msg.ox, msg.oy, msg.oz);
         const dir = new THREE.Vector3(msg.dx, msg.dy, msg.dz);
         this._spawnTracer(origin, dir);
+        this.remotes.triggerFire(msg.from);
         break;
       }
       case 'damage': {
@@ -369,6 +377,7 @@ export class Game {
 
   _kickViewmodel() {
     this._viewKick = Math.min(1, this._viewKick + 0.55);
+    if (this.viewmodel?.userData?.triggerFire) this.viewmodel.userData.triggerFire();
   }
 
   _spawnTracer(origin, direction) {

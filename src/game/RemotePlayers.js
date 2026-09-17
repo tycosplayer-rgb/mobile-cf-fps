@@ -133,6 +133,20 @@ export class RemotePlayers {
     r.human.setAnim(r._animPhase, r._speed01);
   }
 
+  /** Trigger shoot pose / arm recoil on a remote (from net shoot events). */
+  triggerFire(id) {
+    const r = this.remotes.get(id);
+    if (!r?.human?.triggerFire) return;
+    r.human.triggerFire();
+  }
+
+  /** Decay fire kick on all remotes each frame. */
+  update(dt) {
+    for (const r of this.remotes.values()) {
+      if (r.human?.updateFire) r.human.updateFire(dt);
+    }
+  }
+
   setAlive(id, alive, hp) {
     const r = this.remotes.get(id);
     if (!r) return;

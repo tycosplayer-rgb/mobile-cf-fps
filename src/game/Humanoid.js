@@ -38,6 +38,8 @@ function box(w, h, d, material, x, y, z, rx = 0, ry = 0, rz = 0) {
  *   body: THREE.Mesh,
  *   limbs: { leftLeg: THREE.Group, rightLeg: THREE.Group, leftArm: THREE.Group, rightArm: THREE.Group },
  *   setAnim: (phase: number, speed01: number) => void,
+ *   triggerFire: () => void,
+ *   updateFire: (dt: number) => void,
  *   flashHit: () => void,
  * }}
  */
@@ -129,21 +131,25 @@ export function createHumanoid(outfitColor, opts = {}) {
     group.add(box(0.32, 0.06, 0.1, outfit, 0, 1.76, 0.12)); // brim / goggles band
   }
 
-  // Optional rifle held across front-right
+  // Rifle parented to right arm so it swings / recoils with the limb
+  let rifle = null;
   if (showRifle) {
-    const rifle = new THREE.Group();
-    rifle.position.set(0.12, 1.15, 0.28);
-    rifle.rotation.set(-0.15, 0.35, 0.05);
+    rifle = new THREE.Group();
+    // Local to rightArm (shoulder pivot at 0,0,0; hand ~ y=-0.55)
+    rifle.position.set(0.02, -0.42, 0.22);
+    rifle.rotation.set(-0.55, 0.15, 0.35);
     rifle.add(box(0.06, 0.08, 0.42, metal, 0, 0, -0.05));
     rifle.add(box(0.04, 0.04, 0.28, gunDark, 0, 0.01, -0.38));
     rifle.add(box(0.05, 0.12, 0.08, gunDark, 0, -0.08, 0.12));
     rifle.add(box(0.03, 0.06, 0.06, metal, 0, 0.06, -0.1)); // optic stub
-    group.add(rifle);
-    // Tweak right arm toward rifle
+    rightArm.add(rifle);
+    // Aim pose: both arms forward holding rifle
     rightArm.rotation.x = 1.05;
     rightArm.rotation.y = -0.25;
+    rightArm.rotation.z = -0.08;
     leftArm.rotation.x = 0.85;
-    leftArm.rotation.y = 0.2;
+    leftArm.rotation.y = 0.35;
+    leftArm.rotation.z = 0.15;
   }
 
   // Idle rest pose offsets stored for anim
@@ -152,22 +158,67 @@ export function createHumanoid(outfitColor, opts = {}) {
     rightLegX: 0,
     leftArmX: leftArm.rotation.x,
     rightArmX: rightArm.rotation.x,
+    leftArmY: leftArm.rotation.y,
+    rightArmY: rightArm.rotation.y,
+    leftArmZ: leftArm.rotation.z,
+    rightArmZ: rightArm.rotation.z,
   };
 
+  let fireKick = 0; // 0..1, decays over time
+  let lastWalkPhase = 0;
+  let lastSpeed01 = 0;
+
   function setAnim(phase, speed01 = 0) {
-    const amp = Math.min(1, Math.max(0, speed01)) * 0.55;
-    const s = Math.sin(phase);
-    const c = Math.cos(phase);
+    lastWalkPhase = phase;
+    lastSpeed01 = Math.min(1, Math.max(0, speed01));
+    _applyPose();
+  }
+
+  function _applyPose() {
+    const amp = lastSpeed01 * 0.7;
+    const s = Math.sin(lastWalkPhase);
+    const c = Math.cos(lastWalkPhase);
+
     leftLeg.rotation.x = base.leftLegX + s * amp;
     rightLeg.rotation.x = base.rightLegX - s * amp;
-    // Arms counter-swing lightly (keep rifle pose mostly)
+
+    // Fire kick: snap arms up/back briefly (recoil), then settle
+    const fk = fireKick;
+    const fireRx = fk * 0.55; // pitch up (kick)
+    const fireRz = fk * 0.12;
+
     if (!showRifle) {
-      leftArm.rotation.x = base.leftArmX - s * amp * 0.7;
-      rightArm.rotation.x = base.rightArmX + s * amp * 0.7;
+      leftArm.rotation.x = base.leftArmX - s * amp * 0.85 - fireRx * 0.4;
+      rightArm.rotation.x = base.rightArmX + s * amp * 0.85 - fireRx;
+      leftArm.rotation.y = base.leftArmY;
+      rightArm.rotation.y = base.rightArmY;
+      leftArm.rotation.z = base.leftArmZ;
+      rightArm.rotation.z = base.rightArmZ - fireRz;
     } else {
-      leftArm.rotation.x = base.leftArmX + c * amp * 0.12;
-      rightArm.rotation.x = base.rightArmX + s * amp * 0.08;
+      // Clearer walk sway while keeping rifle aimed mostly forward
+      const walkArm = amp * 0.28;
+      leftArm.rotation.x = base.leftArmX + c * walkArm - fireRx * 0.35;
+      rightArm.rotation.x = base.rightArmX + s * walkArm * 0.55 - fireRx;
+      leftArm.rotation.y = base.leftArmY + s * walkArm * 0.25;
+      rightArm.rotation.y = base.rightArmY - c * walkArm * 0.15;
+      leftArm.rotation.z = base.leftArmZ + s * walkArm * 0.1;
+      rightArm.rotation.z = base.rightArmZ - fireRz;
+      if (rifle) {
+        rifle.rotation.x = -0.55 - fireKick * 0.35;
+        rifle.position.z = 0.22 - fireKick * 0.06;
+      }
     }
+  }
+
+  function triggerFire() {
+    fireKick = Math.min(1, fireKick + 0.85);
+    _applyPose();
+  }
+
+  function updateFire(dt) {
+    if (fireKick <= 0) return;
+    fireKick = Math.max(0, fireKick - dt * 7.5);
+    _applyPose();
   }
 
   let _flashTimer = null;
@@ -192,14 +243,17 @@ export function createHumanoid(outfitColor, opts = {}) {
     body: torso,
     head,
     limbs: { leftLeg, rightLeg, leftArm, rightArm },
+    rifle,
     setAnim,
+    triggerFire,
+    updateFire,
     flashHit,
   };
 }
 
 /**
  * First-person arms + hands + rifle (camera-local).
- * Readable FPS viewmodel — not a full body.
+ * Procedural idle sway, walk bob, fire kick, light reload motion.
  */
 export function createViewmodel() {
   const g = new THREE.Group();
@@ -263,9 +317,127 @@ export function createViewmodel() {
 
   g.add(gun);
 
-  g.userData.basePos = new THREE.Vector3(0, 0, 0);
+  const basePos = new THREE.Vector3(0, 0, 0);
+  const rArmBase = {
+    pos: rArm.position.clone(),
+    rot: rArm.rotation.clone(),
+  };
+  const lArmBase = {
+    pos: lArm.position.clone(),
+    rot: lArm.rotation.clone(),
+  };
+  const gunBase = {
+    pos: gun.position.clone(),
+    rot: new THREE.Euler(0, 0, 0),
+  };
+
+  let fireKick = 0;
+  let reloadT = 0; // 0 idle, >0 mid-reload progress 0..1 style timer
+  let bobPhase = 0;
+
+  /**
+   * Drive FP viewmodel each frame.
+   * @param {number} dt
+   * @param {{
+   *   speed01?: number,
+   *   ads?: boolean,
+   *   reloading?: boolean,
+   *   time?: number,
+   * }} state
+   */
+  function update(dt, state = {}) {
+    const speed01 = Math.min(1, Math.max(0, state.speed01 ?? 0));
+    const ads = !!state.ads;
+    const reloading = !!state.reloading;
+    const time = state.time ?? 0;
+
+    fireKick = Math.max(0, fireKick - dt * 9);
+    bobPhase += dt * (6 + speed01 * 8);
+
+    if (reloading) {
+      reloadT = Math.min(1, reloadT + dt * 0.85);
+    } else {
+      reloadT = Math.max(0, reloadT - dt * 3);
+    }
+
+    // Idle breath sway
+    const idleX = Math.sin(time * 1.1) * 0.006;
+    const idleY = Math.sin(time * 1.7) * 0.008;
+    const idleRx = Math.sin(time * 1.3) * 0.012;
+
+    // Walk bob / arm swing
+    const bob = speed01 * (ads ? 0.35 : 1);
+    const bobY = Math.sin(bobPhase) * 0.018 * bob;
+    const bobX = Math.cos(bobPhase * 0.5) * 0.012 * bob;
+    const swing = Math.sin(bobPhase) * 0.04 * bob;
+
+    // ADS tuck slightly toward center
+    const adsTuckX = ads ? -0.04 : 0;
+    const adsTuckY = ads ? 0.02 : 0;
+    const adsTuckZ = ads ? 0.06 : 0;
+
+    // Fire kick: gun+arms punch up/back
+    const fk = fireKick;
+    const kickZ = fk * 0.055;
+    const kickY = fk * 0.028;
+    const kickRx = -fk * 0.55;
+    const kickRy = fk * 0.08;
+
+    // Reload: dip gun, left arm pulls mag
+    const rl = reloadT;
+    const reloadDip = Math.sin(rl * Math.PI) * 0.1;
+    const reloadYaw = Math.sin(rl * Math.PI) * 0.25;
+
+    g.position.set(
+      basePos.x + idleX + bobX + adsTuckX,
+      basePos.y + idleY + bobY - kickY - reloadDip * 0.5 + adsTuckY,
+      basePos.z + kickZ + adsTuckZ
+    );
+    g.rotation.set(idleRx + kickRx * 0.35 - reloadDip * 0.4, kickRy, swing * 0.3);
+
+    // Right arm follows kick + walk
+    rArm.position.set(
+      rArmBase.pos.x,
+      rArmBase.pos.y + bobY * 0.4 - kickY * 0.5,
+      rArmBase.pos.z + kickZ * 0.4
+    );
+    rArm.rotation.set(
+      rArmBase.rot.x + kickRx * 0.5 + swing * 0.15,
+      rArmBase.rot.y + kickRy,
+      rArmBase.rot.z
+    );
+
+    // Left arm: support + reload pull
+    lArm.position.set(
+      lArmBase.pos.x - reloadYaw * 0.08,
+      lArmBase.pos.y - reloadDip * 0.12 + bobY * 0.3,
+      lArmBase.pos.z + reloadDip * 0.05
+    );
+    lArm.rotation.set(
+      lArmBase.rot.x + reloadDip * 0.6 - kickRx * 0.2,
+      lArmBase.rot.y - reloadYaw * 0.5 + swing * 0.2,
+      lArmBase.rot.z + reloadYaw * 0.3
+    );
+
+    // Gun kick (aligned with arms so muzzle flash still feels attached)
+    gun.position.set(
+      gunBase.pos.x,
+      gunBase.pos.y - kickY * 0.3 - reloadDip * 0.06,
+      gunBase.pos.z + kickZ * 0.7
+    );
+    gun.rotation.set(kickRx * 0.7 - reloadDip * 0.35, kickRy * 0.5, 0);
+  }
+
+  function triggerFire() {
+    fireKick = Math.min(1, fireKick + 0.9);
+  }
+
+  g.userData.basePos = basePos;
   g.userData.rightArm = rArm;
   g.userData.leftArm = lArm;
   g.userData.gun = gun;
+  g.userData.update = update;
+  g.userData.triggerFire = triggerFire;
+
   return g;
 }
