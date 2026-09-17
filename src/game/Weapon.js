@@ -38,7 +38,7 @@ export class Weapon {
 
   attachMuzzleFlash(camera) {
     const light = new THREE.PointLight(0xff9944, 0, 10);
-    light.position.set(0.22, -0.12, -0.85);
+    light.position.set(0.2, -0.15, -1.08);
     camera.add(light);
     this.muzzleFlash = light;
 
@@ -50,7 +50,7 @@ export class Weapon {
       blending: THREE.AdditiveBlending,
     });
     const flash = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 0.18), flashMat);
-    flash.position.set(0.22, -0.12, -0.92);
+    flash.position.set(0.2, -0.15, -1.12);
     camera.add(flash);
     this.muzzleSprite = flash;
   }

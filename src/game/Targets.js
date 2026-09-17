@@ -1,11 +1,13 @@
 import * as THREE from 'three';
 import { resolvePlayerCollisions, findSafeSpawn } from './Arena.js';
+import { createHumanoid } from './Humanoid.js';
 
 const TARGET_RADIUS = 0.55;
 const TARGET_HEIGHT = 1.7;
 
 /**
- * Simple standing targets / dummy bots that can be shot and respawn.
+ * Practice dummy bots — low-poly humanoids that patrol and respawn.
+ * Hit tests still use TARGET_RADIUS / TARGET_HEIGHT capsules.
  */
 export class TargetManager {
   constructor(scene, colliders = []) {
@@ -36,39 +38,25 @@ export class TargetManager {
   }
 
   _spawn(x, z, color) {
-    const group = new THREE.Group();
+    const human = createHumanoid(color, { height: TARGET_HEIGHT, showRifle: true, helmet: true });
+    const group = human.group;
     group.position.set(x, 0, z);
 
-    const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.55 });
-    const body = new THREE.Mesh(
-      new THREE.CapsuleGeometry(TARGET_RADIUS * 0.7, TARGET_HEIGHT - TARGET_RADIUS * 2, 4, 8),
-      bodyMat
-    );
-    body.position.y = TARGET_HEIGHT / 2;
-    body.castShadow = true;
-    group.add(body);
-
-    const head = new THREE.Mesh(
-      new THREE.SphereGeometry(0.28, 12, 10),
-      new THREE.MeshStandardMaterial({ color: 0xffe0b2 })
-    );
-    head.position.y = TARGET_HEIGHT - 0.15;
-    head.castShadow = true;
-    group.add(head);
-
+    // Soft white halo ring so bots stay readable as practice targets
     const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(0.35, 0.04, 8, 20),
-      new THREE.MeshBasicMaterial({ color: 0xffffff })
+      new THREE.TorusGeometry(0.42, 0.035, 6, 16),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55 })
     );
     ring.rotation.x = Math.PI / 2;
-    ring.position.y = 1.1;
+    ring.position.y = 0.05;
     group.add(ring);
 
     this.scene.add(group);
 
     return {
       group,
-      body,
+      body: human.body,
+      human,
       alive: true,
       hp: 100,
       maxHp: 100,
@@ -89,7 +77,7 @@ export class TargetManager {
           t.hp = t.maxHp;
           t.group.visible = true;
           t.group.position.copy(t.home);
-          t.body.material.color.setHex(t.baseColor);
+          if (t.body?.material?.color) t.body.material.color.setHex(t.baseColor);
         }
         continue;
       }
@@ -111,6 +99,8 @@ export class TargetManager {
         Math.cos(t.patrolPhase) * 1.2,
         Math.sin(t.patrolPhase) * 1.8
       );
+      // Walk cycle while patrolling
+      t.human.setAnim(t.patrolPhase * 3.2, 0.75);
     }
   }
 
@@ -148,13 +138,15 @@ export class TargetManager {
   applyDamage(target, amount, now = 0) {
     if (!target.alive) return false;
     target.hp -= amount;
-    target.body.material.emissive = new THREE.Color(0xffffff);
-    target.body.material.emissiveIntensity = 0.6;
-    setTimeout(() => {
-      if (target.body.material) {
-        target.body.material.emissiveIntensity = 0;
-      }
-    }, 60);
+    if (target.human?.flashHit) {
+      target.human.flashHit();
+    } else if (target.body?.material) {
+      target.body.material.emissive = new THREE.Color(0xffffff);
+      target.body.material.emissiveIntensity = 0.6;
+      setTimeout(() => {
+        if (target.body.material) target.body.material.emissiveIntensity = 0;
+      }, 60);
+    }
 
     if (target.hp <= 0) {
       target.alive = false;

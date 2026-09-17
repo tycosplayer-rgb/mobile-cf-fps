@@ -6,6 +6,7 @@ import { Player } from './Player.js';
 import { Weapon } from './Weapon.js';
 import { GameAudio } from './Audio.js';
 import { RemotePlayers } from './RemotePlayers.js';
+import { createViewmodel } from './Humanoid.js';
 
 const SPAWNS = [
   new THREE.Vector3(0, 1.6, 12),
@@ -102,26 +103,7 @@ export class Game {
   }
 
   _createViewmodel() {
-    const g = new THREE.Group();
-    const mat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.6, roughness: 0.35 });
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.55), mat);
-    body.position.set(0.22, -0.18, -0.45);
-    g.add(body);
-    const barrel = new THREE.Mesh(
-      new THREE.BoxGeometry(0.05, 0.05, 0.35),
-      new THREE.MeshStandardMaterial({ color: 0x444444, metalness: 0.8, roughness: 0.3 })
-    );
-    barrel.position.set(0.22, -0.14, -0.78);
-    g.add(barrel);
-    const grip = new THREE.Mesh(
-      new THREE.BoxGeometry(0.08, 0.18, 0.1),
-      new THREE.MeshStandardMaterial({ color: 0x1a1a1a })
-    );
-    grip.position.set(0.22, -0.3, -0.35);
-    grip.rotation.x = 0.35;
-    g.add(grip);
-    g.userData.basePos = new THREE.Vector3(0, 0, 0);
-    return g;
+    return createViewmodel();
   }
 
   _bindHud() {

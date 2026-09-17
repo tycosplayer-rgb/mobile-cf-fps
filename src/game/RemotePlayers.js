@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { resolvePlayerCollisions } from './Arena.js';
+import { createHumanoid } from './Humanoid.js';
 
 const HEIGHT = 1.7;
 const RADIUS = 0.4;
@@ -8,6 +9,7 @@ const EYE = 1.6;
 /**
  * Visual + hit proxies for remote PvP players.
  * State y is eye height (same as local Player.position.y).
+ * Visual is a low-poly humanoid; hit tests still use capsule RADIUS/HEIGHT.
  */
 export class RemotePlayers {
   constructor(scene) {
@@ -19,24 +21,8 @@ export class RemotePlayers {
   ensure(id, name, colorHex) {
     if (this.remotes.has(id)) return this.remotes.get(id);
     const color = colorHex ?? this._colorForId(id);
-    const group = new THREE.Group();
-
-    const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.5 });
-    const body = new THREE.Mesh(
-      new THREE.CapsuleGeometry(RADIUS * 0.65, HEIGHT - RADIUS * 2, 4, 8),
-      bodyMat
-    );
-    body.position.y = HEIGHT / 2;
-    body.castShadow = true;
-    group.add(body);
-
-    const head = new THREE.Mesh(
-      new THREE.SphereGeometry(0.26, 12, 10),
-      new THREE.MeshStandardMaterial({ color: 0xffe0b2 })
-    );
-    head.position.y = HEIGHT - 0.12;
-    head.castShadow = true;
-    group.add(head);
+    const human = createHumanoid(color, { height: HEIGHT, showRifle: true, helmet: true });
+    const group = human.group;
 
     const nameSprite = this._makeNameSprite(name || '玩家');
     nameSprite.position.y = HEIGHT + 0.45;
@@ -49,7 +35,8 @@ export class RemotePlayers {
       id,
       name: name || '玩家',
       group,
-      body,
+      body: human.body,
+      human,
       nameSprite,
       alive: true,
       hp: 100,
@@ -61,6 +48,10 @@ export class RemotePlayers {
       radius: RADIUS,
       height: HEIGHT,
       lastUpdate: 0,
+      _prevX: 0,
+      _prevZ: 0,
+      _animPhase: Math.random() * Math.PI * 2,
+      _speed01: 0,
     };
     this.remotes.set(id, remote);
     return remote;
@@ -118,6 +109,13 @@ export class RemotePlayers {
       x = out.x;
       z = out.z;
     }
+
+    const dx = x - r.x;
+    const dz = z - r.z;
+    const dist = Math.hypot(dx, dz);
+    // Heuristic speed from state deltas (~20 Hz net)
+    r._speed01 = Math.min(1, dist / 0.35);
+
     r.x = x;
     r.y = state.y;
     r.z = z;
@@ -130,6 +128,9 @@ export class RemotePlayers {
     r.group.position.set(r.x, feetY, r.z);
     r.group.rotation.y = r.yaw;
     r.lastUpdate = performance.now();
+
+    r._animPhase += 0.35 + r._speed01 * 0.55;
+    r.human.setAnim(r._animPhase, r._speed01);
   }
 
   setAlive(id, alive, hp) {
