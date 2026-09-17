@@ -1,12 +1,22 @@
 import * as THREE from 'three';
-import { resolvePlayerCollisions, findSafeSpawn } from './Arena.js';
+import { resolvePlayerCollisions, findSafeSpawn, hasLineOfSight, raycastAabb } from './Arena.js';
 import { createHumanoid } from './Humanoid.js';
 
 const TARGET_RADIUS = 0.55;
 const TARGET_HEIGHT = 1.7;
 
+/** Balance knobs for practice-bot combat */
+export const BOT_DAMAGE = 14;
+export const BOT_HEAD_MULT = 1.6;
+export const BOT_FIRE_MIN = 0.55;
+export const BOT_FIRE_MAX = 0.95;
+export const BOT_SPREAD = 0.045;
+export const BOT_RANGE = 26;
+export const BOT_ENGAGE = 22;
+export const BOT_MUZZLE_Y = 1.35;
+
 /**
- * Practice dummy bots — low-poly humanoids that patrol.
+ * Practice dummy bots — low-poly humanoids that patrol and fight the player.
  * Respawn rule (wave / all-clear): a dead bot stays dead until EVERY bot
  * is eliminated, then all respawn together after a short delay.
  * Hit tests still use TARGET_RADIUS / TARGET_HEIGHT capsules.
@@ -17,6 +27,8 @@ export class TargetManager {
     this.colliders = colliders;
     this.targets = [];
     this._tmp = new THREE.Vector3();
+    this._aim = new THREE.Vector3();
+    this._muzzle = new THREE.Vector3();
     /** @type {number} elapsedTime when the whole wave should revive (0 = none) */
     this.waveRespawnAt = 0;
     this.waveRespawnDelay = 2.5;
@@ -68,13 +80,31 @@ export class TargetManager {
       baseColor: color,
       home: new THREE.Vector3(x, 0, z),
       patrolPhase: Math.random() * Math.PI * 2,
-      _fireCd: 1.5 + Math.random() * 2.5,
+      _fireCd: 0.8 + Math.random() * 1.4,
+      _engage: false,
       radius: TARGET_RADIUS,
       height: TARGET_HEIGHT,
     };
   }
 
-  update(dt, time) {
+  /**
+   * @param {number} dt
+   * @param {number} time
+   * @param {{
+   *   playerAlive: boolean,
+   *   playerEye: THREE.Vector3,
+   *   playerRadius?: number,
+   *   playerHeight?: number,
+   *   onBotShot?: (shot: {
+   *     origin: THREE.Vector3,
+   *     direction: THREE.Vector3,
+   *     damage: number,
+   *     hitPlayer: boolean,
+   *     headshot: boolean,
+   *   }) => void,
+   * }} [ctx]
+   */
+  update(dt, time, ctx = null) {
     // Wave clear: when every bot is dead, schedule one shared respawn
     const anyAlive = this.targets.some((t) => t.alive);
     if (!anyAlive && this.targets.length) {
@@ -88,36 +118,175 @@ export class TargetManager {
       this.waveRespawnAt = 0;
     }
 
+    const playerAlive = !!ctx?.playerAlive;
+    const playerEye = ctx?.playerEye;
+    const playerRadius = ctx?.playerRadius ?? 0.35;
+    const playerHeight = ctx?.playerHeight ?? 1.6;
+    const onBotShot = ctx?.onBotShot;
+
     for (const t of this.targets) {
       if (!t.alive) continue;
-      t.patrolPhase += dt * 0.7;
-      let x = t.home.x + Math.sin(t.patrolPhase) * 1.8;
-      let z = t.home.z + Math.cos(t.patrolPhase * 0.85) * 1.2;
-      if (this.colliders.length) {
-        const resolved = resolvePlayerCollisions(
-          new THREE.Vector3(x, 0, z),
-          t.radius,
-          this.colliders
-        );
-        x = resolved.x;
-        z = resolved.z;
+
+      t._fireCd = (t._fireCd ?? 1) - dt;
+
+      let engaging = false;
+      let distToPlayer = Infinity;
+      let faceX = 0;
+      let faceZ = 1;
+
+      if (playerAlive && playerEye) {
+        const dx = playerEye.x - t.group.position.x;
+        const dz = playerEye.z - t.group.position.z;
+        distToPlayer = Math.hypot(dx, dz);
+        if (distToPlayer > 0.01 && distToPlayer <= BOT_ENGAGE) {
+          this._muzzle.set(
+            t.group.position.x,
+            t.group.position.y + BOT_MUZZLE_Y,
+            t.group.position.z
+          );
+          const los = hasLineOfSight(this._muzzle, playerEye, this.colliders, 0.4);
+          if (los) {
+            engaging = true;
+            faceX = dx;
+            faceZ = dz;
+          }
+        }
       }
-      t.group.position.x = x;
-      t.group.position.z = z;
-      // Face (+Z) along patrol tangent so rifle aims outward, not at spawn
-      const vx = Math.cos(t.patrolPhase) * 1.8;
-      const vz = -Math.sin(t.patrolPhase * 0.85) * 1.02;
-      t.group.rotation.y = Math.atan2(vx, vz);
-      // Walk cycle while patrolling (clearer arm swing via Humanoid.setAnim)
-      t.human.setAnim(t.patrolPhase * 3.2, 0.75);
-      // Occasional shoot pose so practice bots show fire kick without AI combat
-      t._fireCd = (t._fireCd ?? 2) - dt;
-      if (t._fireCd <= 0) {
-        t._fireCd = 2.2 + Math.random() * 3.5;
-        if (t.human.triggerFire) t.human.triggerFire();
+
+      t._engage = engaging;
+
+      if (engaging) {
+        // Face the player (humanoid +Z is forward)
+        t.group.rotation.y = Math.atan2(faceX, faceZ);
+
+        // Light strafe / hold near home while aiming
+        t.patrolPhase += dt * 0.55;
+        const strafe = Math.sin(t.patrolPhase * 1.4) * 0.55;
+        const rightX = faceZ / Math.max(0.01, distToPlayer);
+        const rightZ = -faceX / Math.max(0.01, distToPlayer);
+        let x = t.home.x + rightX * strafe;
+        let z = t.home.z + rightZ * strafe;
+        // Nudge slightly toward / away to avoid standing still
+        const toward = Math.sin(t.patrolPhase * 0.7) * 0.35;
+        x += (faceX / Math.max(0.01, distToPlayer)) * toward;
+        z += (faceZ / Math.max(0.01, distToPlayer)) * toward;
+        if (this.colliders.length) {
+          const resolved = resolvePlayerCollisions(
+            new THREE.Vector3(x, 0, z),
+            t.radius,
+            this.colliders
+          );
+          x = resolved.x;
+          z = resolved.z;
+        }
+        t.group.position.x = x;
+        t.group.position.z = z;
+        t.human.setAnim(t.patrolPhase * 2.4, 0.25);
+
+        // Aim + shoot at player
+        if (t._fireCd <= 0 && distToPlayer <= BOT_RANGE) {
+          t._fireCd = BOT_FIRE_MIN + Math.random() * (BOT_FIRE_MAX - BOT_FIRE_MIN);
+          if (t.human.triggerFire) t.human.triggerFire();
+
+          this._muzzle.set(
+            t.group.position.x,
+            t.group.position.y + BOT_MUZZLE_Y,
+            t.group.position.z
+          );
+          // Aim at torso/chest (slightly below eye) with spread
+          const aimY = playerEye.y - 0.25 + (Math.random() - 0.5) * 0.35;
+          this._aim.set(
+            playerEye.x - this._muzzle.x,
+            aimY - this._muzzle.y,
+            playerEye.z - this._muzzle.z
+          ).normalize();
+          this._aim.x += (Math.random() - 0.5) * 2 * BOT_SPREAD;
+          this._aim.y += (Math.random() - 0.5) * 2 * BOT_SPREAD;
+          this._aim.z += (Math.random() - 0.5) * 2 * BOT_SPREAD;
+          this._aim.normalize();
+
+          // Don't hit player through solid AABB walls
+          const wallDist = this.colliders.length
+            ? raycastAabb(this._muzzle, this._aim, BOT_RANGE, this.colliders)
+            : null;
+
+          let hitPlayer = false;
+          let headshot = false;
+          let damage = 0;
+
+          const hit = this._raycastPlayer(
+            this._muzzle,
+            this._aim,
+            playerEye,
+            playerRadius,
+            playerHeight,
+            BOT_RANGE
+          );
+          if (hit && (wallDist === null || hit.distance < wallDist - 0.05)) {
+            hitPlayer = true;
+            headshot = hit.headshot;
+            damage = Math.round(BOT_DAMAGE * (headshot ? BOT_HEAD_MULT : 1));
+          }
+
+          if (onBotShot) {
+            onBotShot({
+              origin: this._muzzle.clone(),
+              direction: this._aim.clone(),
+              damage,
+              hitPlayer,
+              headshot,
+            });
+          }
+        }
+      } else {
+        // Patrol when not engaging
+        t.patrolPhase += dt * 0.7;
+        let x = t.home.x + Math.sin(t.patrolPhase) * 1.8;
+        let z = t.home.z + Math.cos(t.patrolPhase * 0.85) * 1.2;
+        if (this.colliders.length) {
+          const resolved = resolvePlayerCollisions(
+            new THREE.Vector3(x, 0, z),
+            t.radius,
+            this.colliders
+          );
+          x = resolved.x;
+          z = resolved.z;
+        }
+        t.group.position.x = x;
+        t.group.position.z = z;
+        // Face (+Z) along patrol tangent so rifle aims outward, not at spawn
+        const vx = Math.cos(t.patrolPhase) * 1.8;
+        const vz = -Math.sin(t.patrolPhase * 0.85) * 1.02;
+        t.group.rotation.y = Math.atan2(vx, vz);
+        t.human.setAnim(t.patrolPhase * 3.2, 0.75);
       }
+
       if (t.human.updateFire) t.human.updateFire(dt);
     }
+  }
+
+  /**
+   * Capsule hit test against the local player (eye-height position).
+   */
+  _raycastPlayer(origin, direction, playerEye, playerRadius, playerHeight, maxDist) {
+    const feetY = playerEye.y - playerHeight;
+    const bodyCenterY = feetY + playerHeight * 0.5;
+    const center = this._tmp.set(playerEye.x, bodyCenterY, playerEye.z);
+    const toCenter = center.clone().sub(origin);
+    const proj = toCenter.dot(direction);
+    if (proj < 0 || proj > maxDist) return null;
+
+    const closest = origin.clone().addScaledVector(direction, proj);
+    const dx = closest.x - playerEye.x;
+    const dz = closest.z - playerEye.z;
+    const horiz = Math.sqrt(dx * dx + dz * dz);
+    if (horiz > playerRadius + 0.22) return null;
+
+    const y = closest.y;
+    if (y < feetY - 0.1 || y > feetY + playerHeight + 0.3) return null;
+
+    const headshot = y > feetY + playerHeight - 0.48;
+    return { distance: proj, headshot, point: closest };
   }
 
   _respawnAll() {
@@ -127,12 +296,13 @@ export class TargetManager {
       t.group.visible = true;
       t.group.position.copy(t.home);
       t.patrolPhase = Math.random() * Math.PI * 2;
-      t._fireCd = 1.5 + Math.random() * 2.5;
+      t._fireCd = 0.8 + Math.random() * 1.4;
+      t._engage = false;
       if (t.body?.material?.color) t.body.material.color.setHex(t.baseColor);
     }
   }
 
-  /** Optional: play a shoot pose on a bot (practice feedback / future AI fire). */
+  /** Optional: play a shoot pose on a bot (practice feedback). */
   triggerFire(target) {
     if (target?.human?.triggerFire) target.human.triggerFire();
   }

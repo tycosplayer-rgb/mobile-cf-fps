@@ -298,3 +298,90 @@ export function softSeparateXZ(a, b, radiusA, radiusB, strength = 0.55) {
   a.z += (dz / dist) * push;
   return true;
 }
+
+/**
+ * Ray vs AABB slab test. Returns nearest hit distance in (0, maxDist], or null.
+ * Skips very-flat props (max.y < 0.3) like the player collision filter.
+ */
+export function raycastAabb(origin, direction, maxDist, colliders) {
+  let best = null;
+  const ox = origin.x;
+  const oy = origin.y;
+  const oz = origin.z;
+  const dx = direction.x;
+  const dy = direction.y;
+  const dz = direction.z;
+
+  for (const c of colliders) {
+    if (c.max.y < 0.3) continue;
+
+    let tmin = 0;
+    let tmax = maxDist;
+
+    // X slab
+    if (Math.abs(dx) < EPS) {
+      if (ox < c.min.x || ox > c.max.x) continue;
+    } else {
+      let t1 = (c.min.x - ox) / dx;
+      let t2 = (c.max.x - ox) / dx;
+      if (t1 > t2) {
+        const tmp = t1;
+        t1 = t2;
+        t2 = tmp;
+      }
+      tmin = Math.max(tmin, t1);
+      tmax = Math.min(tmax, t2);
+      if (tmin > tmax) continue;
+    }
+
+    // Y slab
+    if (Math.abs(dy) < EPS) {
+      if (oy < c.min.y || oy > c.max.y) continue;
+    } else {
+      let t1 = (c.min.y - oy) / dy;
+      let t2 = (c.max.y - oy) / dy;
+      if (t1 > t2) {
+        const tmp = t1;
+        t1 = t2;
+        t2 = tmp;
+      }
+      tmin = Math.max(tmin, t1);
+      tmax = Math.min(tmax, t2);
+      if (tmin > tmax) continue;
+    }
+
+    // Z slab
+    if (Math.abs(dz) < EPS) {
+      if (oz < c.min.z || oz > c.max.z) continue;
+    } else {
+      let t1 = (c.min.z - oz) / dz;
+      let t2 = (c.max.z - oz) / dz;
+      if (t1 > t2) {
+        const tmp = t1;
+        t1 = t2;
+        t2 = tmp;
+      }
+      tmin = Math.max(tmin, t1);
+      tmax = Math.min(tmax, t2);
+      if (tmin > tmax) continue;
+    }
+
+    if (tmin > 0 && (best === null || tmin < best)) best = tmin;
+  }
+  return best;
+}
+
+/**
+ * True if a segment from `from` to `to` is clear of solid AABB walls
+ * (no hit closer than dist - slack).
+ */
+export function hasLineOfSight(from, to, colliders, slack = 0.35) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const dz = to.z - from.z;
+  const dist = Math.hypot(dx, dy, dz);
+  if (dist < EPS) return true;
+  const dir = new THREE.Vector3(dx / dist, dy / dist, dz / dist);
+  const hit = raycastAabb(from, dir, dist, colliders);
+  return hit === null || hit >= dist - slack;
+}

@@ -32,6 +32,7 @@ export class Game {
     this._netAcc = 0;
     this._viewKick = 0;
     this._dmgNums = [];
+    this._dmgDirArcs = [];
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
@@ -117,6 +118,7 @@ export class Game {
     this.elHitMarker = document.getElementById('hit-marker');
     this.elKillFeed = document.getElementById('kill-feed');
     this.elHurtVignette = document.getElementById('hurt-vignette');
+    this.elDamageDir = document.getElementById('damage-dir');
     this.elDmgLayer = document.getElementById('dmg-numbers');
     this.elScore = document.getElementById('score-panel');
     this.elRespawn = document.getElementById('respawn-overlay');
@@ -155,7 +157,15 @@ export class Game {
     this.player.update(dt, this.controls, this.colliders);
     this._separateFromRemotes();
     this.weapon.update(dt);
-    if (this.targets) this.targets.update(dt, time);
+    if (this.targets) {
+      this.targets.update(dt, time, {
+        playerAlive: this.player.alive,
+        playerEye: this.player.position,
+        playerRadius: this.player.radius,
+        playerHeight: this.player.height,
+        onBotShot: (shot) => this._onBotShot(shot),
+      });
+    }
 
     // FP viewmodel: idle sway, walk bob/swing, fire kick, reload motion
     if (this.viewmodel?.userData?.update) {
@@ -234,6 +244,7 @@ export class Game {
 
     this._updateTracers(dt);
     this._updateDmgNumbers(dt);
+    this._updateDamageDir(dt);
     this._updateHud();
     this.renderer.render(this.scene, this.camera);
   };
@@ -252,6 +263,9 @@ export class Game {
           targetId: hit.remote.id,
           amount: dmg,
           headshot: hit.headshot,
+          ox: shot.origin.x,
+          oy: shot.origin.y,
+          oz: shot.origin.z,
         });
         return;
       }
@@ -289,19 +303,18 @@ export class Game {
       }
       case 'damage': {
         if (msg.targetId === this.net?.localId && this.player.alive) {
-          const died = this.player.takeDamage(msg.amount);
-          this.audio.playHurt();
-          if (died) {
-            this.deaths += 1;
-            this.player.respawnAt = 0; // armed by round-wipe check, not a fixed 3s timer
-            if (this.elRespawn) {
-              this.elRespawn.classList.remove('hidden');
-              const t = this.elRespawn.querySelector('.respawn-text');
-              if (t) t.textContent = '你被击倒 · 等待全部淘汰后重生';
-            }
-            this._sendNet({ type: 'died', killerId: msg.from, headshot: !!msg.headshot });
-            this._pushFeed(`${this._nameOf(msg.from)} 击杀了你`);
+          let fromPos = null;
+          if (typeof msg.ox === 'number' && typeof msg.oz === 'number') {
+            fromPos = { x: msg.ox, y: msg.oy ?? this.player.position.y, z: msg.oz };
+          } else {
+            const attacker = this.remotes.remotes.get(msg.from);
+            if (attacker) fromPos = { x: attacker.x, y: attacker.y, z: attacker.z };
           }
+          this._applyLocalDamage(msg.amount, fromPos, {
+            killerId: msg.from,
+            headshot: !!msg.headshot,
+            pvp: true,
+          });
         }
         break;
       }
@@ -410,7 +423,99 @@ export class Game {
     this.camera.position.z = this.player.position.z;
   }
 
-  _nameOf(id) {
+  _onBotShot(shot) {
+    this._spawnTracer(shot.origin, shot.direction);
+    // Soft fire cue so practice bots feel armed
+    this.audio.playFire();
+    if (shot.hitPlayer && shot.damage > 0 && this.player.alive) {
+      this._applyLocalDamage(shot.damage, shot.origin, { pvp: false });
+    }
+  }
+
+  /**
+   * Apply damage to the local player (NPC or remote). Shows hurt VFX/SFX,
+   * red damage-direction arc, and handles death / wipe wait overlay.
+   * @param {number} amount
+   * @param {{x:number,y?:number,z:number}|null} fromWorldPos
+   * @param {{ killerId?: string, headshot?: boolean, pvp?: boolean }} [meta]
+   */
+  _applyLocalDamage(amount, fromWorldPos = null, meta = {}) {
+    if (!this.player.alive || amount <= 0) return false;
+    const died = this.player.takeDamage(amount);
+    this.audio.playHurt();
+    if (fromWorldPos) this._showDamageDir(fromWorldPos);
+
+    if (died) {
+      this.deaths += 1;
+      this.player.respawnAt = 0; // armed by round-wipe / practice delay
+      if (this.elRespawn) {
+        this.elRespawn.classList.remove('hidden');
+        const t = this.elRespawn.querySelector('.respawn-text');
+        if (t) {
+          t.textContent =
+            this.mode === 'pvp'
+              ? '你被击倒 · 等待全部淘汰后重生'
+              : '你被击倒 · 等待回合结束后重生';
+        }
+      }
+      if (meta.pvp && meta.killerId) {
+        this._sendNet({
+          type: 'died',
+          killerId: meta.killerId,
+          headshot: !!meta.headshot,
+        });
+        this._pushFeed(`${this._nameOf(meta.killerId)} 击杀了你`);
+      } else if (!meta.pvp) {
+        this._pushFeed('被练习靶击倒');
+      }
+    }
+    return died;
+  }
+
+  /**
+   * Red ring arc toward attacker azimuth relative to look yaw (0 = forward/top).
+   */
+  _showDamageDir(fromWorldPos) {
+    if (!this.elDamageDir || !fromWorldPos) return;
+    const px = this.player.position.x;
+    const pz = this.player.position.z;
+    const yaw = this.player.yaw;
+    const fx = -Math.sin(yaw);
+    const fz = -Math.cos(yaw);
+    const rx = Math.cos(yaw);
+    const rz = -Math.sin(yaw);
+    const toX = fromWorldPos.x - px;
+    const toZ = fromWorldPos.z - pz;
+    if (toX * toX + toZ * toZ < 1e-6) return;
+    const forwardDot = toX * fx + toZ * fz;
+    const rightDot = toX * rx + toZ * rz;
+    // 0 = front (screen top), + = right (clockwise) — matches CSS conic-gradient
+    const angDeg = (Math.atan2(rightDot, forwardDot) * 180) / Math.PI;
+
+    const el = document.createElement('div');
+    el.className = 'damage-dir-arc';
+    el.style.setProperty('--ang', `${angDeg}deg`);
+    this.elDamageDir.appendChild(el);
+    this._dmgDirArcs.push({ el, life: 1.0 });
+    // Cap simultaneous arcs (mobile perf)
+    while (this._dmgDirArcs.length > 8) {
+      const oldArc = this._dmgDirArcs.shift();
+      oldArc.el.remove();
+    }
+  }
+
+  _updateDamageDir(dt) {
+    for (let i = this._dmgDirArcs.length - 1; i >= 0; i--) {
+      const a = this._dmgDirArcs[i];
+      a.life -= dt;
+      if (a.life <= 0) {
+        a.el.remove();
+        this._dmgDirArcs.splice(i, 1);
+      }
+    }
+  }
+
+    _nameOf(id) {
     if (!id) return '未知';
     if (id === this.net?.localId) return this.net.playerName || '你';
     const p = this.net?.players.get(id);
