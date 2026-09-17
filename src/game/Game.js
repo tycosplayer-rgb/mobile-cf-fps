@@ -121,6 +121,7 @@ export class Game {
     this.elDamageDir = document.getElementById('damage-dir');
     this.elDmgLayer = document.getElementById('dmg-numbers');
     this.elScore = document.getElementById('score-panel');
+    this.elInvulnerability = document.getElementById('invulnerability-status');
     this.elRespawn = document.getElementById('respawn-overlay');
   }
 
@@ -237,6 +238,7 @@ export class Game {
           pitch: this.player.pitch,
           hp: this.player.health,
           alive: this.player.alive,
+          spawnProtected: this.player.isInvulnerable,
           name: this.net.playerName,
         });
       }
@@ -254,6 +256,7 @@ export class Game {
     if (this.mode === 'pvp') {
       const hit = this.remotes.raycast(shot.origin, shot.direction, 80, this.net?.localId);
       if (hit) {
+        if (hit.remote.spawnProtected) return;
         const dmg = Math.round(this.weapon.damage * (hit.headshot ? this.weapon.headMultiplier : 1));
         this._showHitMarker(hit.headshot);
         this._spawnDmgNumber(dmg, hit.headshot);
@@ -336,7 +339,15 @@ export class Game {
       case 'respawn': {
         this.remotes.applyState(
           msg.from,
-          { x: msg.x, y: msg.y, z: msg.z, yaw: msg.yaw, alive: true, hp: 100 },
+          {
+            x: msg.x,
+            y: msg.y,
+            z: msg.z,
+            yaw: msg.yaw,
+            alive: true,
+            hp: 100,
+            spawnProtected: msg.spawnProtected !== false,
+          },
           this._nameOf(msg.from),
           this.colliders
         );
@@ -402,6 +413,7 @@ export class Game {
       y: this.player.position.y,
       z: this.player.position.z,
       yaw: this.player.yaw,
+      spawnProtected: this.player.isInvulnerable,
     });
   }
 
@@ -440,7 +452,7 @@ export class Game {
    * @param {{ killerId?: string, headshot?: boolean, pvp?: boolean }} [meta]
    */
   _applyLocalDamage(amount, fromWorldPos = null, meta = {}) {
-    if (!this.player.alive || amount <= 0) return false;
+    if (!this.player.alive || amount <= 0 || this.player.isInvulnerable) return false;
     const died = this.player.takeDamage(amount);
     this.audio.playHurt();
     if (fromWorldPos) this._showDamageDir(fromWorldPos);
@@ -616,6 +628,11 @@ export class Game {
     if (this.elScore) {
       this.elScore.textContent =
         this.mode === 'pvp' ? `击杀 ${this.kills} · 死亡 ${this.deaths}` : `练习模式`;
+    }
+    if (this.elInvulnerability) {
+      const remaining = this.player.invulnerabilityRemaining;
+      this.elInvulnerability.hidden = remaining <= 0;
+      if (remaining > 0) this.elInvulnerability.textContent = `无敌 · ${remaining.toFixed(1)}s`;
     }
     if (!this.player.alive && this.elRespawn && !this.elRespawn.classList.contains('hidden')) {
       const t = this.elRespawn.querySelector('.respawn-text');

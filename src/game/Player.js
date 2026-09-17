@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { sweepPlayerMove, findSafeSpawn, resolvePlayerCollisions } from './Arena.js';
 
+const RESPAWN_INVULNERABILITY_SECONDS = 3;
+
 export class Player {
   constructor(camera, spawn) {
     this.camera = camera;
@@ -20,6 +22,7 @@ export class Player {
     this.maxHealth = 100;
     this.alive = true;
     this.respawnAt = 0;
+    this.invulnerabilityRemaining = 0;
     this.baseFov = 75;
     this.adsFov = 50;
 
@@ -56,7 +59,7 @@ export class Player {
   }
 
   takeDamage(amount) {
-    if (!this.alive) return false;
+    if (!this.alive || this.isInvulnerable) return false;
     this.health = Math.max(0, this.health - amount);
     this._hurtFlash = 0.35;
     this.shake = Math.min(1, this.shake + 0.5);
@@ -88,6 +91,11 @@ export class Player {
     this.recoilYaw = 0;
     this.shake = 0;
     this.respawnAt = 0;
+    this.invulnerabilityRemaining = RESPAWN_INVULNERABILITY_SECONDS;
+  }
+
+  get isInvulnerable() {
+    return this.invulnerabilityRemaining > 0;
   }
 
   /**
@@ -109,6 +117,7 @@ export class Player {
     if (Math.abs(this.recoilYaw) < 1e-5) this.recoilYaw = 0;
     this.shake = Math.max(0, this.shake - dt * 3.5);
     this._hurtFlash = Math.max(0, this._hurtFlash - dt);
+    this.invulnerabilityRemaining = Math.max(0, this.invulnerabilityRemaining - dt);
 
     if (!this.alive) {
       this.camera.position.copy(this.position);

@@ -40,6 +40,7 @@ export class RemotePlayers {
       nameSprite,
       alive: true,
       hp: 100,
+      spawnProtected: false,
       x: 0,
       y: EYE,
       z: 0,
@@ -122,6 +123,7 @@ export class RemotePlayers {
     r.yaw = state.yaw;
     r.pitch = state.pitch ?? 0;
     r.alive = state.alive !== false;
+    r.spawnProtected = r.alive && state.spawnProtected === true;
     if (typeof state.hp === 'number') r.hp = state.hp;
     r.group.visible = r.alive;
     const feetY = r.y - EYE;
@@ -152,6 +154,7 @@ export class RemotePlayers {
     const r = this.remotes.get(id);
     if (!r) return;
     r.alive = alive;
+    r.spawnProtected = false;
     if (typeof hp === 'number') r.hp = hp;
     r.group.visible = !!alive;
   }

@@ -134,6 +134,22 @@ body.playing .hud-tools {
   white-space: nowrap;
 }
 
+.invulnerability-status {
+  position: absolute;
+  top: max(52px, calc(env(safe-area-inset-top) + 46px));
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  border: 1px solid rgba(123, 255, 218, 0.48);
+  border-radius: 999px;
+  background: rgba(4, 48, 47, 0.62);
+  color: #a7f3d0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+}
+
 .ammo-panel {
   background: rgba(0, 0, 0, 0.45);
   padding: 6px 12px;
