@@ -126,7 +126,8 @@ export class RemotePlayers {
     r.group.visible = r.alive;
     const feetY = r.y - EYE;
     r.group.position.set(r.x, feetY, r.z);
-    r.group.rotation.y = r.yaw;
+    // Humanoid face is +Z; camera/look uses -Z at yaw=0 → offset by PI
+    r.group.rotation.y = r.yaw + Math.PI;
     r.lastUpdate = performance.now();
 
     r._animPhase += 0.35 + r._speed01 * 0.55;

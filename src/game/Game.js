@@ -79,6 +79,8 @@ export class Game {
     this._tracers = [];
     this.kills = 0;
     this.deaths = 0;
+    /** Ignore round-wipe checks briefly after a shared respawn (avoids re-trigger loops). */
+    this._respawnGraceUntil = 0;
 
     this._bindHud();
     this._onResize = () => this._resize();
@@ -144,23 +146,10 @@ export class Game {
     const dt = Math.min(0.05, this.clock.getDelta());
     const time = this.clock.elapsedTime;
 
-    // Death / respawn
-    if (!this.player.alive) {
-      if (this.player.respawnAt && time >= this.player.respawnAt) {
-        const idx = this._spawnIndexFor(this.net?.localId || 'local');
-        const spawnRaw = this.spawnPoints[(idx + this.deaths) % this.spawnPoints.length].clone();
-        const spawn = findSafeSpawn(spawnRaw, this.player.radius, this.colliders, this.player.height);
-        this.player.respawn(spawn, (idx + this.deaths) % 2 === 0 ? Math.PI : 0, this.colliders);
-        this.weapon.resetAmmo();
-        if (this.elRespawn) this.elRespawn.classList.add('hidden');
-        this._sendNet({
-          type: 'respawn',
-          x: this.player.position.x,
-          y: this.player.position.y,
-          z: this.player.position.z,
-          yaw: this.player.yaw,
-        });
-      }
+    // Death / respawn — PvP round wipe (dead wait; last survivor also ends the round).
+    // Practice bots use TargetManager wave/all-clear (see Targets.js).
+    if (!this.player.alive || (this.mode === 'pvp' && this._roundWipeReady())) {
+      this._updateRoundRespawn(time);
     }
 
     this.player.update(dt, this.controls, this.colliders);
@@ -304,10 +293,11 @@ export class Game {
           this.audio.playHurt();
           if (died) {
             this.deaths += 1;
-            this.player.respawnAt = this.clock.elapsedTime + 3;
+            this.player.respawnAt = 0; // armed by round-wipe check, not a fixed 3s timer
             if (this.elRespawn) {
               this.elRespawn.classList.remove('hidden');
-              this.elRespawn.querySelector('.respawn-text').textContent = '你被击倒 · 3 秒后重生';
+              const t = this.elRespawn.querySelector('.respawn-text');
+              if (t) t.textContent = '你被击倒 · 等待全部淘汰后重生';
             }
             this._sendNet({ type: 'died', killerId: msg.from, headshot: !!msg.headshot });
             this._pushFeed(`${this._nameOf(msg.from)} 击杀了你`);
@@ -342,6 +332,64 @@ export class Game {
       default:
         break;
     }
+  }
+
+  /** Count living combatants (local + remotes). */
+  _aliveCount() {
+    let n = this.player.alive ? 1 : 0;
+    for (const r of this.remotes.remotes.values()) {
+      if (r.alive) n += 1;
+    }
+    return n;
+  }
+
+  /**
+   * Round should end when nobody is left fighting:
+   * - 0 alive (everyone dead), or
+   * - ≤1 alive with 2+ participants (last survivor → round wipe so dead are not stuck).
+   * Solo PvP (no remotes): dead local may self-respawn after the shared delay.
+   */
+  _roundWipeReady() {
+    if (this.clock.elapsedTime < this._respawnGraceUntil) return false;
+    if (this.mode !== 'pvp') return !this.player.alive;
+    const alive = this._aliveCount();
+    const participants = 1 + this.remotes.remotes.size;
+    if (participants < 2) return !this.player.alive;
+    return alive <= 1;
+  }
+
+  /**
+   * PvP round wipe: dead players spectate until the round is over (all eliminated
+   * or only one left), then a short shared delay and everyone respawns.
+   * Practice bots use TargetManager wave/all-clear respawn instead.
+   */
+  _updateRoundRespawn(time) {
+    const wipe = this._roundWipeReady();
+    if (!wipe) {
+      this.player.respawnAt = 0;
+      return;
+    }
+    if (!this.player.respawnAt) {
+      this.player.respawnAt = time + 2.5;
+    }
+    if (time < this.player.respawnAt) return;
+
+    // If we were the last survivor, still force a round respawn with the others
+    const idx = this._spawnIndexFor(this.net?.localId || 'local');
+    const spawnRaw = this.spawnPoints[(idx + this.deaths) % this.spawnPoints.length].clone();
+    const spawn = findSafeSpawn(spawnRaw, this.player.radius, this.colliders, this.player.height);
+    this.player.respawn(spawn, (idx + this.deaths) % 2 === 0 ? Math.PI : 0, this.colliders);
+    this.weapon.resetAmmo();
+    this._respawnGraceUntil = time + 4;
+    this.player.respawnAt = 0;
+    if (this.elRespawn) this.elRespawn.classList.add('hidden');
+    this._sendNet({
+      type: 'respawn',
+      x: this.player.position.x,
+      y: this.player.position.y,
+      z: this.player.position.z,
+      yaw: this.player.yaw,
+    });
   }
 
   _separateFromRemotes() {
@@ -465,9 +513,15 @@ export class Game {
         this.mode === 'pvp' ? `击杀 ${this.kills} · 死亡 ${this.deaths}` : `练习模式`;
     }
     if (!this.player.alive && this.elRespawn && !this.elRespawn.classList.contains('hidden')) {
-      const left = Math.max(0, (this.player.respawnAt || 0) - this.clock.elapsedTime);
       const t = this.elRespawn.querySelector('.respawn-text');
-      if (t) t.textContent = `你被击倒 · ${left.toFixed(1)} 秒后重生`;
+      if (t) {
+        if (this.player.respawnAt && this._roundWipeReady()) {
+          const left = Math.max(0, this.player.respawnAt - this.clock.elapsedTime);
+          t.textContent = `回合结束 · ${left.toFixed(1)} 秒后共同重生`;
+        } else {
+          t.textContent = '你被击倒 · 等待全部淘汰后重生';
+        }
+      }
     }
   }
 }

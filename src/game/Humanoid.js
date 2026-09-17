@@ -106,9 +106,10 @@ export function createHumanoid(outfitColor, opts = {}) {
   rightArm.add(rightHand);
   group.add(rightArm);
 
-  // Default aim-ish pose: arms slightly forward
-  leftArm.rotation.x = 0.35;
-  rightArm.rotation.x = 0.55;
+  // Default aim-ish pose: arms toward character front (+Z / face).
+  // Positive Rx swings toward -Z (behind); use negative Rx for forward.
+  leftArm.rotation.x = -0.35;
+  rightArm.rotation.x = -0.55;
   rightArm.rotation.z = -0.08;
   leftArm.rotation.z = 0.12;
 
@@ -131,24 +132,28 @@ export function createHumanoid(outfitColor, opts = {}) {
     group.add(box(0.32, 0.06, 0.1, outfit, 0, 1.76, 0.12)); // brim / goggles band
   }
 
-  // Rifle parented to right arm so it swings / recoils with the limb
+  // Rifle parented to right arm so it swings / recoils with the limb.
+  // Character face/front is +Z; negative arm Rx brings hands to +Z; rifle Rx
+  // aligns barrel (local -Z) with character forward (+Z). Remotes must use
+  // rotation.y = yaw + Math.PI so face matches look direction.
   let rifle = null;
+  const RIFLE_BASE = { x: 0.02, y: -0.48, z: 0.05, rx: -1.6, ry: 0.05, rz: 0.08 };
   if (showRifle) {
     rifle = new THREE.Group();
     // Local to rightArm (shoulder pivot at 0,0,0; hand ~ y=-0.55)
-    rifle.position.set(0.02, -0.42, 0.22);
-    rifle.rotation.set(-0.55, 0.15, 0.35);
+    rifle.position.set(RIFLE_BASE.x, RIFLE_BASE.y, RIFLE_BASE.z);
+    rifle.rotation.set(RIFLE_BASE.rx, RIFLE_BASE.ry, RIFLE_BASE.rz);
     rifle.add(box(0.06, 0.08, 0.42, metal, 0, 0, -0.05));
     rifle.add(box(0.04, 0.04, 0.28, gunDark, 0, 0.01, -0.38));
     rifle.add(box(0.05, 0.12, 0.08, gunDark, 0, -0.08, 0.12));
     rifle.add(box(0.03, 0.06, 0.06, metal, 0, 0.06, -0.1)); // optic stub
     rightArm.add(rifle);
-    // Aim pose: both arms forward holding rifle
-    rightArm.rotation.x = 1.05;
-    rightArm.rotation.y = -0.25;
-    rightArm.rotation.z = -0.08;
-    leftArm.rotation.x = 0.85;
-    leftArm.rotation.y = 0.35;
+    // Aim pose: both arms forward (toward +Z face), holding rifle across torso
+    rightArm.rotation.x = -1.25;
+    rightArm.rotation.y = 0.22;
+    rightArm.rotation.z = -0.1;
+    leftArm.rotation.x = -1.05;
+    leftArm.rotation.y = -0.35;
     leftArm.rotation.z = 0.15;
   }
 
@@ -182,30 +187,31 @@ export function createHumanoid(outfitColor, opts = {}) {
     leftLeg.rotation.x = base.leftLegX + s * amp;
     rightLeg.rotation.x = base.rightLegX - s * amp;
 
-    // Fire kick: snap arms up/back briefly (recoil), then settle
+    // Fire kick: snap muzzle up briefly (recoil), then settle.
+    // With negative base Rx (arms forward +Z), adding fireRx pitches tip up.
     const fk = fireKick;
-    const fireRx = fk * 0.55; // pitch up (kick)
+    const fireRx = fk * 0.45;
     const fireRz = fk * 0.12;
 
     if (!showRifle) {
-      leftArm.rotation.x = base.leftArmX - s * amp * 0.85 - fireRx * 0.4;
-      rightArm.rotation.x = base.rightArmX + s * amp * 0.85 - fireRx;
+      leftArm.rotation.x = base.leftArmX - s * amp * 0.85 + fireRx * 0.35;
+      rightArm.rotation.x = base.rightArmX + s * amp * 0.85 + fireRx;
       leftArm.rotation.y = base.leftArmY;
       rightArm.rotation.y = base.rightArmY;
       leftArm.rotation.z = base.leftArmZ;
       rightArm.rotation.z = base.rightArmZ - fireRz;
     } else {
-      // Clearer walk sway while keeping rifle aimed mostly forward
+      // Walk sway while keeping rifle aimed mostly along character +Z
       const walkArm = amp * 0.28;
-      leftArm.rotation.x = base.leftArmX + c * walkArm - fireRx * 0.35;
-      rightArm.rotation.x = base.rightArmX + s * walkArm * 0.55 - fireRx;
+      leftArm.rotation.x = base.leftArmX + c * walkArm + fireRx * 0.3;
+      rightArm.rotation.x = base.rightArmX + s * walkArm * 0.55 + fireRx;
       leftArm.rotation.y = base.leftArmY + s * walkArm * 0.25;
       rightArm.rotation.y = base.rightArmY - c * walkArm * 0.15;
       leftArm.rotation.z = base.leftArmZ + s * walkArm * 0.1;
       rightArm.rotation.z = base.rightArmZ - fireRz;
       if (rifle) {
-        rifle.rotation.x = -0.55 - fireKick * 0.35;
-        rifle.position.z = 0.22 - fireKick * 0.06;
+        rifle.rotation.x = RIFLE_BASE.rx + fireKick * 0.4;
+        rifle.position.z = RIFLE_BASE.z - fireKick * 0.04;
       }
     }
   }
@@ -268,8 +274,9 @@ export function createViewmodel() {
 
   // Right forearm (main holding arm)
   const rArm = new THREE.Group();
-  rArm.position.set(0.18, -0.28, -0.28);
-  rArm.rotation.set(0.15, 0.05, -0.35);
+  // Camera looks down -Z; more negative Z = in front of the player
+  rArm.position.set(0.2, -0.26, -0.35);
+  rArm.rotation.set(0.12, 0.05, -0.32);
   rArm.add(box(0.1, 0.1, 0.28, sleeve, 0, 0, 0.06));
   // Wrist
   rArm.add(box(0.09, 0.09, 0.08, skin, 0, 0, -0.12));
@@ -283,15 +290,15 @@ export function createViewmodel() {
 
   // Left support forearm (near magwell)
   const lArm = new THREE.Group();
-  lArm.position.set(0.02, -0.22, -0.42);
-  lArm.rotation.set(0.45, 0.35, 0.55);
+  lArm.position.set(0.0, -0.2, -0.48);
+  lArm.rotation.set(0.4, 0.32, 0.5);
   lArm.add(box(0.09, 0.09, 0.22, sleeve, 0, 0, 0));
   lArm.add(box(0.08, 0.07, 0.1, skinDark, 0, -0.01, -0.14));
   g.add(lArm);
 
   // --- Rifle ---
   const gun = new THREE.Group();
-  gun.position.set(0.2, -0.16, -0.5);
+  gun.position.set(0.22, -0.14, -0.58);
 
   // Receiver
   gun.add(box(0.07, 0.1, 0.32, metal, 0, 0, 0));

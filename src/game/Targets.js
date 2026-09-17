@@ -6,7 +6,9 @@ const TARGET_RADIUS = 0.55;
 const TARGET_HEIGHT = 1.7;
 
 /**
- * Practice dummy bots — low-poly humanoids that patrol and respawn.
+ * Practice dummy bots — low-poly humanoids that patrol.
+ * Respawn rule (wave / all-clear): a dead bot stays dead until EVERY bot
+ * is eliminated, then all respawn together after a short delay.
  * Hit tests still use TARGET_RADIUS / TARGET_HEIGHT capsules.
  */
 export class TargetManager {
@@ -15,6 +17,9 @@ export class TargetManager {
     this.colliders = colliders;
     this.targets = [];
     this._tmp = new THREE.Vector3();
+    /** @type {number} elapsedTime when the whole wave should revive (0 = none) */
+    this.waveRespawnAt = 0;
+    this.waveRespawnDelay = 2.5;
 
     const spots = [
       { x: -8, z: -6, color: 0xe53935 },
@@ -60,7 +65,6 @@ export class TargetManager {
       alive: true,
       hp: 100,
       maxHp: 100,
-      respawnAt: 0,
       baseColor: color,
       home: new THREE.Vector3(x, 0, z),
       patrolPhase: Math.random() * Math.PI * 2,
@@ -71,17 +75,21 @@ export class TargetManager {
   }
 
   update(dt, time) {
-    for (const t of this.targets) {
-      if (!t.alive) {
-        if (time >= t.respawnAt) {
-          t.alive = true;
-          t.hp = t.maxHp;
-          t.group.visible = true;
-          t.group.position.copy(t.home);
-          if (t.body?.material?.color) t.body.material.color.setHex(t.baseColor);
-        }
-        continue;
+    // Wave clear: when every bot is dead, schedule one shared respawn
+    const anyAlive = this.targets.some((t) => t.alive);
+    if (!anyAlive && this.targets.length) {
+      if (!this.waveRespawnAt) {
+        this.waveRespawnAt = time + this.waveRespawnDelay;
+      } else if (time >= this.waveRespawnAt) {
+        this._respawnAll();
+        this.waveRespawnAt = 0;
       }
+    } else {
+      this.waveRespawnAt = 0;
+    }
+
+    for (const t of this.targets) {
+      if (!t.alive) continue;
       t.patrolPhase += dt * 0.7;
       let x = t.home.x + Math.sin(t.patrolPhase) * 1.8;
       let z = t.home.z + Math.cos(t.patrolPhase * 0.85) * 1.2;
@@ -96,10 +104,10 @@ export class TargetManager {
       }
       t.group.position.x = x;
       t.group.position.z = z;
-      t.group.rotation.y = Math.atan2(
-        Math.cos(t.patrolPhase) * 1.2,
-        Math.sin(t.patrolPhase) * 1.8
-      );
+      // Face (+Z) along patrol tangent so rifle aims outward, not at spawn
+      const vx = Math.cos(t.patrolPhase) * 1.8;
+      const vz = -Math.sin(t.patrolPhase * 0.85) * 1.02;
+      t.group.rotation.y = Math.atan2(vx, vz);
       // Walk cycle while patrolling (clearer arm swing via Humanoid.setAnim)
       t.human.setAnim(t.patrolPhase * 3.2, 0.75);
       // Occasional shoot pose so practice bots show fire kick without AI combat
@@ -109,6 +117,18 @@ export class TargetManager {
         if (t.human.triggerFire) t.human.triggerFire();
       }
       if (t.human.updateFire) t.human.updateFire(dt);
+    }
+  }
+
+  _respawnAll() {
+    for (const t of this.targets) {
+      t.alive = true;
+      t.hp = t.maxHp;
+      t.group.visible = true;
+      t.group.position.copy(t.home);
+      t.patrolPhase = Math.random() * Math.PI * 2;
+      t._fireCd = 1.5 + Math.random() * 2.5;
+      if (t.body?.material?.color) t.body.material.color.setHex(t.baseColor);
     }
   }
 
@@ -164,7 +184,7 @@ export class TargetManager {
     if (target.hp <= 0) {
       target.alive = false;
       target.group.visible = false;
-      target.respawnAt = now + 3;
+      // Stay dead until all bots are cleared (wave respawn in update)
       return true;
     }
     return false;
