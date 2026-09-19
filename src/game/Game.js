@@ -121,6 +121,7 @@ export class Game {
     this.elDamageDir = document.getElementById('damage-dir');
     this.elDmgLayer = document.getElementById('dmg-numbers');
     this.elScore = document.getElementById('score-panel');
+    this.elEnemyCount = document.getElementById('enemy-count');
     this.elInvulnerability = document.getElementById('invulnerability-status');
     this.elRespawn = document.getElementById('respawn-overlay');
   }
@@ -628,6 +629,17 @@ export class Game {
     if (this.elScore) {
       this.elScore.textContent =
         this.mode === 'pvp' ? `击杀 ${this.kills} · 死亡 ${this.deaths}` : `练习模式`;
+    }
+    if (this.elEnemyCount) {
+      if (this.targets) {
+        const total = this.targets.targets.length;
+        const alive = this.targets.targets.reduce((count, target) => count + (target.alive ? 1 : 0), 0);
+        this.elEnemyCount.textContent = `敌人 ${alive}/${total}`;
+      } else {
+        const opponents = [...this.remotes.remotes.values()];
+        const alive = opponents.reduce((count, opponent) => count + (opponent.alive ? 1 : 0), 0);
+        this.elEnemyCount.textContent = `对手 ${alive}/${opponents.length}`;
+      }
     }
     if (this.elInvulnerability) {
       const remaining = this.player.invulnerabilityRemaining;

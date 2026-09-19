@@ -134,6 +134,27 @@ body.playing .hud-tools {
   white-space: nowrap;
 }
 
+.hud-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.enemy-count {
+  padding: 4px 10px;
+  border: 1px solid rgba(123, 255, 218, 0.38);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.48);
+  color: #a7f3d0;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
 .invulnerability-status {
   position: absolute;
   top: max(52px, calc(env(safe-area-inset-top) + 46px));
